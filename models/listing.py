@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from typing import Annotated, Literal, Optional, Union
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import AnyHttpUrl, BaseModel, Field
 
 
 class ListingData(BaseModel):
-    id: str
+    id: int
     code: str
+    name: str
 
     model_config = {"extra": "allow"}
 
@@ -15,19 +16,10 @@ class ListingData(BaseModel):
 class FileItem(BaseModel):
     type: Literal["file"]
     name: str
-    mime_type: Optional[str] = Field(None, alias="mimeType")
-    id: str
+    mime_type: Optional[str] = None
+    id: int
     modified: int
-    url: str
-
-    @model_validator(mode="after")
-    def check_mime_type(self) -> "FileItem":
-        if self.mime_type is None:
-            # mimeType was not provided — downstream handlers should detect/infer it
-            pass
-        return self
-
-    model_config = {"populate_by_name": True}
+    url: AnyHttpUrl
 
 
 class FolderItem(BaseModel):
