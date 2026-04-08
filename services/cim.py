@@ -168,10 +168,93 @@ async def download_files(items: list[ListingFile]) -> list[FileItem]:
 # File type routing
 # ---------------------------------------------------------------------------
 
-async def _chunk_file(file: FileItem) -> None:
-    """Process a readable document by chunking it for embeddings. (not yet implemented)"""
-    logger.debug("Chunking file '%s' (mime_type: %s)", file.name, file.mime_type)
-    # TODO: implement chunking and embedding generation.
+def _is_structured_doc(file: FileItem) -> bool:
+    # TODO: inspect heading styles / outline levels via python-docx.
+    raise NotImplementedError
+
+
+def _is_structured_pdf(file: FileItem) -> bool:
+    # TODO: check for PDF bookmarks / tagged structure via pdfminer or pypdf.
+    raise NotImplementedError
+
+
+def _is_structured_ppt(file: FileItem) -> bool:
+    # TODO: check slide structure / section markers via python-pptx.
+    raise NotImplementedError
+
+
+def _is_structured_txt(file: FileItem) -> bool:
+    # TODO: heuristic detection (e.g. consistent section markers).
+    raise NotImplementedError
+
+
+def _is_structured_html(file: FileItem) -> bool:
+    # TODO: check for semantic tags (h1-h6, article, section) via BeautifulSoup.
+    raise NotImplementedError
+
+
+def _is_structured_markdown(file: FileItem) -> bool:
+    # TODO: check for heading markers (#, ##, …).
+    raise NotImplementedError
+
+
+def _is_structured_rtf(file: FileItem) -> bool:
+    # TODO: check for RTF heading styles.
+    raise NotImplementedError
+
+
+def _is_structured(file: FileItem) -> bool:
+    """
+    Returns True if the document has enough structural markup to extract
+    sections/headings directly, False if it should be treated as unstructured.
+    Covers all chunkable mime types; dispatches to a format-specific check.
+    """
+    mime = file.mime_type
+
+    if mime in (
+        "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/vnd.ms-word.document.macroEnabled.12",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.template",
+        "application/vnd.oasis.opendocument.text",
+    ):
+        return _is_structured_doc(file)
+    elif mime in ("application/pdf", "application/x-pdf"):
+        return _is_structured_pdf(file)
+    elif mime in (
+        "application/vnd.ms-powerpoint",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "application/vnd.openxmlformats-officedocument.presentationml.slideshow",
+        "application/vnd.openxmlformats-officedocument.presentationml.template",
+        "application/vnd.ms-powerpoint.presentation.macroEnabled.12",
+        "application/vnd.ms-powerpoint.slideshow.macroEnabled.12",
+        "application/vnd.ms-powerpoint.template.macroEnabled.12",
+        "application/vnd.oasis.opendocument.presentation",
+    ):
+        return _is_structured_ppt(file)
+    elif mime == "text/plain":
+        return _is_structured_txt(file)
+    elif mime == "text/html":
+        return _is_structured_html(file)
+    elif mime == "text/markdown":
+        return _is_structured_markdown(file)
+    elif mime == "application/rtf":
+        return _is_structured_rtf(file)
+    else:
+        return False  # unknown type — treat as unstructured
+
+
+async def process_doc(file: FileItem) -> None:
+    """
+    Processes a readable document (PDF, DOCX, TXT, …).
+    First determines whether the document is structured or unstructured, then
+    routes to the appropriate ingestion path.
+    (not yet implemented beyond structure detection)
+    """
+    logger.debug("Processing doc '%s' (mime_type: %s)", file.name, file.mime_type)
+    structured = _is_structured(file)
+    logger.debug("Doc '%s' is %s", file.name, "structured" if structured else "unstructured")
+    # TODO: implement structured and unstructured ingestion paths.
 
 
 async def _analyze_tabular(file: FileItem) -> None:
@@ -191,7 +274,7 @@ async def _route_file(file: FileItem) -> None:
     mime = file.mime_type
 
     if mime in CHUNKABLE_MIME_TYPES:
-        await _chunk_file(file)
+        await process_doc(file)
     elif mime in TABULAR_MIME_TYPES:
         await _analyze_tabular(file)
     elif mime in IMAGE_MIME_TYPES:
