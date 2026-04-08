@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     # Maximum number of files downloaded concurrently across all requests.
     cim_max_concurrent_downloads: int = 10
 
+    # Maximum number of files processed concurrently across all requests.
+    cim_max_concurrent_processing: int = 5
+
     # Logging level for the entire application. One of: DEBUG, INFO, WARNING, ERROR.
     log_level: str = "INFO"
 

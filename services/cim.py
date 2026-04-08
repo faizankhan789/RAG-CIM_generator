@@ -1,3 +1,25 @@
+"""
+CIM generation pipeline
+=======================
+
+This module drives the full pipeline for building a CIM from a listing tree.
+The pipeline runs in the following stages:
+
+  1. Downloading
+     All files in the listing are collected into a flat (FileItem, destination)
+     list and submitted concurrently to the download pool. Each job streams the
+     file to disk and detects its mime_type from the file header.
+
+  2. Processing
+     Once all downloads complete, every file is submitted to the process pool.
+     Each file is routed to the appropriate processor based on its mime_type:
+       - Readable documents (PDF, DOCX, TXT, PPTX, …) → chunked for embeddings
+       - Tabular data (CSV, XLSX, XLS, ODS, …)        → tabular analysis
+       - Images (JPEG, PNG, WEBP, …)                  → vision pipeline
+
+  (Future stages: retrieval, generation, …)
+"""
+
 import asyncio
 import logging
 import os
@@ -7,7 +29,8 @@ import httpx
 import filetype
 
 from core.config import settings
-from core.pools import download_pool
+from core.mime_types import CHUNKABLE_MIME_TYPES, TABULAR_MIME_TYPES, IMAGE_MIME_TYPES
+from core.pools import download_pool, process_pool
 from models import FileItem, FolderItem
 from models.listing import ListingFile
 
@@ -17,7 +40,7 @@ logger = logging.getLogger(__name__)
 _http_client: httpx.AsyncClient
 
 # ---------------------------------------------------------------------------
-# Internal helpers
+# Download helpers
 # ---------------------------------------------------------------------------
 
 def _collect_downloads(
@@ -113,7 +136,7 @@ async def _download_file(file: FileItem, destination: str) -> FileItem:
 
 
 # ---------------------------------------------------------------------------
-# Public API
+# Downloading
 # ---------------------------------------------------------------------------
 
 async def download_files(items: list[ListingFile]) -> list[FileItem]:
@@ -139,3 +162,85 @@ async def download_files(items: list[ListingFile]) -> list[FileItem]:
 
     logger.info("Download batch '%s' complete — %d file(s) saved", temp_name, len(results))
     return list(results)
+
+
+# ---------------------------------------------------------------------------
+# File type routing
+# ---------------------------------------------------------------------------
+
+async def _chunk_file(file: FileItem) -> None:
+    """Process a readable document by chunking it for embeddings. (not yet implemented)"""
+    logger.debug("Chunking file '%s' (mime_type: %s)", file.name, file.mime_type)
+    # TODO: implement chunking and embedding generation.
+
+
+async def _analyze_tabular(file: FileItem) -> None:
+    """Process a tabular file with pandas or equivalent analysis. (not yet implemented)"""
+    logger.debug("Analyzing tabular file '%s' (mime_type: %s)", file.name, file.mime_type)
+    # TODO: implement tabular analysis.
+
+
+async def _process_image(file: FileItem) -> None:
+    """Process an image file through vision-based pipeline. (not yet implemented)"""
+    logger.debug("Processing image '%s' (mime_type: %s)", file.name, file.mime_type)
+    # TODO: implement image processing.
+
+
+async def _route_file(file: FileItem) -> None:
+    """Selects and runs the correct processor for a single file based on its mime_type."""
+    mime = file.mime_type
+
+    if mime in CHUNKABLE_MIME_TYPES:
+        await _chunk_file(file)
+    elif mime in TABULAR_MIME_TYPES:
+        await _analyze_tabular(file)
+    elif mime in IMAGE_MIME_TYPES:
+        await _process_image(file)
+    else:
+        logger.warning(
+            "No processor for file '%s' (mime_type: %s) — skipping",
+            file.name, mime,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Processing
+# ---------------------------------------------------------------------------
+
+async def _process_files(files: list[FileItem]) -> None:
+    """
+    Submits each downloaded file to the process pool for concurrent processing.
+    Each file is routed to the appropriate processor based on its mime_type:
+      - Readable documents (PDF, DOCX, TXT, PPTX, …) → _chunk_file
+      - Tabular data (CSV, XLSX, XLS, ODS, …)        → _analyze_tabular
+      - Images (JPEG, PNG, WEBP, …)                  → _process_image
+      - Unrecognised types                            → skipped with a warning
+    """
+    await asyncio.gather(
+        *[process_pool.submit(_route_file(file)) for file in files]
+    )
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+async def create_cim(items: list[ListingFile]) -> str:
+    """
+    Orchestrates the full CIM generation pipeline.
+    Steps:
+      1. Download all listing files.
+      (future steps: chunking, retrieval, …)
+
+    Returns the final HTML as a string.
+    """
+    downloaded = await download_files(items)
+    logger.info("create_cim — %d file(s) downloaded, proceeding to next steps", len(downloaded))
+
+    await _process_files(downloaded)
+
+    # TODO: add retrieval and generation steps here.
+
+    return ""
+
+
