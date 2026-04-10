@@ -17,6 +17,26 @@ The pipeline runs in the following stages:
        - Tabular data (CSV, XLSX, XLS, ODS, …)        → tabular analysis
        - Images (JPEG, PNG, WEBP, …)                  → vision pipeline
 
+     For DOCX files, a structure check decides whether to use boundary-aware
+     splitting or naive chunking.  Boundary rules and their precedence:
+
+       Precedence  Rule                       Signal strength
+       ──────────  ─────────────────────────  ───────────────
+       0           Section breaks (sectPr)    strongest
+       1           Heading styles             strongest
+       2           Tables                     strong
+       3           Key-value patterns         strong
+       4           Lists (bullet/num)         strong
+       4.5         Highlight / shading        strong
+       5           Title lines (CAPS/Title)   medium
+       6           Font-size increase         medium
+       7           Bold at line start         weaker
+       8           Repeating patterns*        weaker
+       9           Paragraph spacing          weakest
+       10          Template blocks*           weakest
+
+       * Rules 8 and 10 require cross-document awareness and are deferred.
+
   (Future stages: retrieval, generation, …)
 """
 
@@ -33,6 +53,7 @@ from core.mime_types import CHUNKABLE_MIME_TYPES, TABULAR_MIME_TYPES, IMAGE_MIME
 from core.pools import download_pool, process_pool
 from models import FileItem, FolderItem
 from models.listing import ListingFile
+from services.processors.docx import DocSegment, is_structured_docx, split_docx
 
 logger = logging.getLogger(__name__)
 
@@ -168,9 +189,26 @@ async def download_files(items: list[ListingFile]) -> list[FileItem]:
 # File type routing
 # ---------------------------------------------------------------------------
 
+# OOXML-based document MIME types handled by the DOCX processor.
+_OOXML_DOC_MIMES = frozenset({
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",  # .docx
+    "application/vnd.ms-word.document.macroEnabled.12",                         # .docm
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.template",  # .dotx
+})
+
+
 def _is_structured_doc(file: FileItem) -> bool:
-    # TODO: inspect heading styles / outline levels via python-docx.
-    raise NotImplementedError
+    if file.local_path is None:
+        logger.warning("Cannot check structure — file '%s' has no local_path", file.name)
+        return False
+    if file.mime_type in _OOXML_DOC_MIMES:
+        return is_structured_docx(file.local_path)
+    # Binary .doc and ODT are not yet supported — fall back to unstructured.
+    logger.warning(
+        "Structure detection not yet supported for '%s' — treating as unstructured",
+        file.mime_type,
+    )
+    return False
 
 
 def _is_structured_pdf(file: FileItem) -> bool:
@@ -244,17 +282,33 @@ def _is_structured(file: FileItem) -> bool:
         return False  # unknown type — treat as unstructured
 
 
-async def process_doc(file: FileItem) -> None:
+async def process_doc(file: FileItem) -> list[DocSegment]:
     """
     Processes a readable document (PDF, DOCX, TXT, …).
     First determines whether the document is structured or unstructured, then
     routes to the appropriate ingestion path.
-    (not yet implemented beyond structure detection)
+
+    For OOXML documents (.docx/.docm/.dotx) the structured path uses
+    ``split_docx`` which streams the XML so memory stays constant even for
+    1 GB+ files.
     """
     logger.debug("Processing doc '%s' (mime_type: %s)", file.name, file.mime_type)
     structured = _is_structured(file)
     logger.debug("Doc '%s' is %s", file.name, "structured" if structured else "unstructured")
-    # TODO: implement structured and unstructured ingestion paths.
+
+    if structured and file.mime_type in _OOXML_DOC_MIMES:
+        # Run the sync streaming splitter in a thread so we don't block the
+        # event loop (ZIP I/O + XML parsing are CPU-bound).
+        segments = await asyncio.to_thread(
+            lambda: list(split_docx(file.local_path))
+        )
+        logger.info(
+            "Doc '%s' split into %d segment(s)", file.name, len(segments),
+        )
+        return segments
+
+    # TODO: implement unstructured chunking and non-OOXML doc paths.
+    return []
 
 
 async def _analyze_tabular(file: FileItem) -> None:
