@@ -208,9 +208,33 @@ def print_comparison(rows: list[dict]) -> None:
 # Entry point
 # ---------------------------------------------------------------------------
 
+def _pick_files() -> list[str]:
+    """Open a native file-picker dialog and return selected paths."""
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+    except ImportError:
+        print("tkinter not available — pass file paths as CLI args instead.")
+        return []
+
+    root = tk.Tk()
+    root.withdraw()          # hide the empty root window
+    root.attributes("-topmost", True)
+    paths = filedialog.askopenfilenames(
+        title="Select DOCX files",
+        filetypes=[("Word documents", "*.docx *.docm *.dotx"), ("All files", "*.*")],
+    )
+    root.destroy()
+    return list(paths)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Test docx.py against real files")
-    ap.add_argument("files", nargs="+", help="DOCX files to test")
+    ap.add_argument(
+        "files",
+        nargs="*",
+        help="DOCX files to test (omit to open a file picker)",
+    )
     ap.add_argument(
         "--summary-only",
         action="store_true",
@@ -224,8 +248,18 @@ def main() -> int:
     )
     args = ap.parse_args()
 
+    # Add hardcoded paths here — used when no CLI args given and picker skipped.
+    DEFAULT_FILES: list[str] = [
+        "/Users/faizankhan/Documents/CRM/CIM/test-docs/highlight.docx",
+    ]
+
+    files = args.files or _pick_files() or [os.path.expanduser(p) for p in DEFAULT_FILES]
+    if not files:
+        print("No files selected.")
+        return 1
+
     rows: list[dict] = []
-    for path in args.files:
+    for path in files:
         rows.append(run_file(path, args.summary_only, args.max_segments))
 
     print_comparison(rows)
