@@ -28,9 +28,9 @@ def get_client() -> anthropic.AsyncAnthropic:
 # ── Per-file extraction prompt ────────────────────────────────────────────────
 
 _EXTRACTION_PROMPT = """\
-You are a senior financial analyst reviewing documents for a Confidential Information Memorandum (CIM).
+You are a senior financial analyst extracting data from documents to build a Confidential Information Memorandum (CIM).
 
-You may receive two types of input:
+INPUT TYPES:
 1. <ListingContext> XML — structured CRM data (asking price, financials, location, broker info, etc.)
 2. Document content — PDF, spreadsheet, presentation, or image from the data room
 
@@ -42,15 +42,108 @@ PRIORITY RULES:
 CRITICAL — numbers:
 - Copy ALL financial figures, percentages, dates, and quantities EXACTLY as they appear.
 - Never round, abbreviate, convert, or reformat any number.
-- Preserve currency symbols, units (USD, %, x, bps), and date formats exactly.
+- Preserve currency symbols, units (USD, £, €, %, x, bps), and date formats exactly.
 - Never invent or infer numbers not explicitly stated.
 
-Extract ALL relevant CIM information from the content. Use clear markdown headings for each topic area you find.
-Only include sections where you found actual data — do not output empty sections.
-Cover anything relevant: financials, operations, management, products, market, legal, risks, growth, etc.
-Also note any industry-specific signals (business type, sector, industry terminology, KPIs used) — these help generate an industry-appropriate CIM.
+INDUSTRY SIGNALS — always note:
+- Business type, sector, cuisine type, service category, star rating, etc.
+- Industry-specific KPIs present (RevPAR, ADR, COGS%, ARR, CAC, NOI, etc.)
+- These signals are critical for generating an industry-appropriate CIM design.
 
-Return your findings as structured markdown text. No JSON. No preamble."""
+EXTRACTION STRUCTURE:
+Map everything you find to the relevant CIM section below.
+Use these exact markdown headings — only include a heading if you found actual data for it.
+
+## I. Executive Summary
+- Brief business description, what it does, where it operates
+- Key investment highlights and unique selling points
+- Financial performance summary (top-line revenue, profit, margins)
+- Asking price and deal terms if stated
+
+## II. Company Overview
+- History, founding year, milestones, ownership structure
+- Vision, mission, values, company culture
+- Management team: names, titles, experience, tenure
+- Location(s), premises description, lease or freehold details
+- Products and services offered
+- Competitive advantages and differentiators
+- Market position, market size, industry overview
+- SWOT findings (strengths, weaknesses, opportunities, threats)
+- Social responsibility or sustainability initiatives
+
+## III. Financial Information
+- Revenue figures (annual, monthly, by stream) — exact numbers
+- Gross profit, EBITDA, net profit — exact figures
+- Adjusted EBITDA and add-backs if stated
+- Revenue stream breakdown (e.g. dine-in vs delivery, rooms vs F&B)
+- KPIs relevant to the industry (exact values only)
+- Year-on-year trends, growth rates
+- Financial projections or forecasts if provided
+- Cost structure: COGS, labour, rent, overheads — exact figures
+- Debt, loans, liabilities if stated
+- Tax position if mentioned
+- Capitalization or ownership percentages
+
+## IV. Operations
+- Core operational processes and workflows
+- Opening hours, trading days, capacity (seats, keys, units, etc.)
+- Supply chain, suppliers, sourcing details
+- Key equipment, technology systems, POS, booking platforms
+- Quality certifications, accreditations, food hygiene ratings
+- R&D or innovation activities
+- Intellectual property (patents, trademarks, recipes, software)
+- Scalability or capacity headroom
+
+## V. Marketing and Sales
+- Target customers and market segmentation
+- Marketing channels used (social, SEO, email, PR, events, etc.)
+- Brand positioning, reputation, online reviews/ratings
+- Sales process and distribution channels
+- Key accounts, repeat customers, loyalty programmes
+- Customer acquisition cost or conversion data if stated
+- Churn rate or retention metrics if stated
+
+## VI. Legal and Regulatory
+- Legal entity type and registration details
+- Licences and permits (alcohol licence, food hygiene, planning, etc.)
+- Key contracts: leases, supplier agreements, franchise agreements
+- Insurance policies
+- Any litigation, disputes, or regulatory issues
+- Data privacy and GDPR compliance notes
+- Environmental compliance
+
+## VII. Human Resources
+- Total headcount (full-time / part-time / seasonal)
+- Key staff roles and seniority
+- Compensation structure, salary bands, tips policy
+- Staff tenure and retention
+- Training programmes and certifications
+- Succession plan or owner dependency risks
+- Union or labour agreements
+
+## VIII. Growth Opportunities
+- Identified growth levers (new locations, extended hours, new revenue streams)
+- New product or service development plans
+- Market expansion or international plans
+- Strategic partnership or franchise potential
+- M&A opportunities mentioned
+- Untapped market segments
+
+## IX. Risk Factors
+- Market or economic risks
+- Competitive threats
+- Operational risks (key person dependency, supplier concentration, etc.)
+- Financial risks (debt, thin margins, seasonality)
+- Legal or regulatory risks
+- Technology or cybersecurity risks
+- Reputational risks
+
+## X. Appendix Material
+- Any supporting data, charts, tables, testimonials, awards
+- Raw financial statement data not summarised above
+- Any other notable facts not captured in sections I–IX
+
+Return ONLY the populated markdown. No preamble, no commentary, no empty sections."""
 
 
 async def extract_from_content(
@@ -170,7 +263,108 @@ Immediately after TOC — a full-width horizontal strip of stat cards (3–6 car
 - Only use metrics actually present in the data
 
 ━━━━━━━━━━━━━━━━━━━━━━━━
-CONTENT SECTIONS
+CIM STRUCTURE — 10 SECTIONS
+━━━━━━━━━━━━━━━━━━━━━━━━
+Use this exact section and subtopic structure as the backbone of every CIM.
+ONLY include subtopics where you have actual data — skip any subtopic with no content.
+Adapt terminology to the detected industry (e.g. "Manufacturing processes" → "Kitchen Operations" for a restaurant).
+
+I. Executive Summary
+   • Brief overview of the business
+   • Key investment highlights
+   • Summary of financial performance (key revenue/profit figures)
+   • Asking price and key terms
+
+II. Company Overview
+   • History and background
+   • Ownership structure
+   • Vision and Mission
+   • Values and Culture
+   • Management team and key personnel
+   • Location and facilities
+   • Products and services
+   • Competitive advantages
+   • Market position and industry overview
+   • Social Responsibility & Sustainability
+   • SWOT analysis (2×2 grid)
+
+III. Financial Information
+   • Historical financial statements
+   • Adjusted EBITDA and other relevant metrics
+   • Detailed breakdown of revenue streams
+   • Key performance indicators (KPIs) — use industry-specific metrics
+   • Financial ratios and trends
+   • Projections and forecasts
+   • Cost structure analysis
+   • Debt structure
+   • Tax information
+
+IV. Operations
+   • Core operational processes (adapt name to industry)
+   • Supply chain and logistics
+   • Key suppliers and customers
+   • Technology and equipment
+   • Quality certifications and standards
+   • Research and development
+   • Intellectual property
+   • Scalability and capacity for growth
+
+V. Marketing and Sales
+   • Target market and customer segmentation
+   • Marketing strategies and channels
+   • Sales processes and distribution channels
+   • Branding and advertising
+   • Customer relationship management
+   • Sales pipeline
+   • Customer acquisition costs
+   • Customer churn rate (if applicable)
+
+VI. Legal and Regulatory
+   • Legal structure and compliance
+   • Permits and licenses
+   • Key contracts and agreements
+   • Insurance coverage
+   • Data privacy and security
+   • Environmental regulations
+   • Litigation and disputes
+
+VII. Human Resources
+   • Employee demographics and headcount
+   • Compensation and benefits
+   • Training programs
+   • Key employee retention strategies
+   • Management succession plan
+   • Labor relations
+
+VIII. Growth Opportunities
+   • Expansion plans and strategies
+   • New product / service development
+   • Market penetration and diversification
+   • Strategic partnerships
+   • International expansion (if applicable)
+   • Franchise or licensing opportunities (if applicable)
+   • Mergers and acquisitions potential
+
+IX. Risk Factors
+   • Industry and market risks
+   • Competitive risks
+   • Financial risks
+   • Operational risks
+   • Legal and regulatory risks
+   • Technology and cybersecurity risks
+   • Reputation and brand risks
+   • ESG risks
+
+X. Appendix
+   • Supporting financial statements
+   • Market research data
+   • Appraisals and valuations
+   • Key legal documents
+   • Customer testimonials
+   • Industry awards and recognition
+
+━━━━━━━━━━━━━━━━━━━━━━━━
+CONTENT SECTIONS — LAYOUT
 ━━━━━━━━━━━━━━━━━━━━━━━━
 Each section (id="section-N") follows this pattern:
 
