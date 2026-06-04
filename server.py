@@ -46,6 +46,7 @@ app.add_middleware(
 class ListingFile(BaseModel):
     name: str
     url: str
+    mimeType: str
 
 
 class CIMRequest(BaseModel):
