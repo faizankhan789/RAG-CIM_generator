@@ -23,12 +23,14 @@ class CIMState(TypedDict):
     listing_xml: str
     listing_name: str
     asking_price: str
+    logo_url: str
 
     # After ingest: categorised file lists
     pdf_files: list[FileItem]
     spreadsheet_files: list[FileItem]
     image_files: list[FileItem]
     ppt_files: list[FileItem]
+    word_files: list[FileItem]
 
     # After processor nodes: accumulated extracted content
     extracted: Annotated[list[ExtractedContent], _merge_lists]

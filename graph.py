@@ -25,9 +25,10 @@ from nodes.ingest import ingest_node
 from nodes.pdf import pdf_node
 from nodes.ppt import ppt_node
 from nodes.spreadsheet import spreadsheet_node
+from nodes.word import word_node
 from state import CIMState
 
-_PROCESSOR_NODES = ["pdf_node", "spreadsheet_node", "image_node", "ppt_node"]
+_PROCESSOR_NODES = ["pdf_node", "spreadsheet_node", "image_node", "ppt_node", "word_node"]
 
 
 def build_graph() -> StateGraph:
@@ -39,6 +40,7 @@ def build_graph() -> StateGraph:
     builder.add_node("spreadsheet_node", spreadsheet_node)
     builder.add_node("image_node", image_node)
     builder.add_node("ppt_node", ppt_node)
+    builder.add_node("word_node", word_node)
     builder.add_node("aggregator", aggregator_node)
     builder.add_node("formatter", formatter_node)
 

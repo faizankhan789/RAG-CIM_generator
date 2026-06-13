@@ -2,18 +2,33 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import io
 import logging
+import os
 from typing import Any
 
 import anthropic
+from datetime import date
 
 log = logging.getLogger(__name__)
 
 MODEL = "claude-sonnet-4-6"
 MAX_TOKENS = 8192
 MAX_HTML_TOKENS = 32000
+
+# Max concurrent LLM extraction calls (env-tunable, default 5)
+_LLM_CONCURRENCY = int(os.getenv("LLM_CONCURRENCY", "5"))
+_llm_sem: asyncio.Semaphore | None = None
+
+
+def _get_llm_semaphore() -> asyncio.Semaphore:
+    global _llm_sem
+    if _llm_sem is None:
+        _llm_sem = asyncio.Semaphore(_LLM_CONCURRENCY)
+    return _llm_sem
+
 
 _client: anthropic.AsyncAnthropic | None = None
 
@@ -151,7 +166,11 @@ async def extract_from_content(
     source_url: str,
     listing_xml: str = "",
 ) -> str:
-    """Call Claude with file content. Returns free-form markdown findings text."""
+    """Call Claude with file content. Returns free-form markdown findings text.
+
+    Gated by _llm_sem so at most LLM_CONCURRENCY calls run simultaneously,
+    preventing Claude API rate-limit errors when many files are processed.
+    """
     client = get_client()
     user_content: list[dict] = []
     if listing_xml:
@@ -164,16 +183,18 @@ async def extract_from_content(
         })
     user_content.extend(content_blocks)
     user_content.append({"type": "text", "text": _EXTRACTION_PROMPT})
-    try:
-        response = await client.messages.create(
-            model=MODEL,
-            max_tokens=MAX_TOKENS,
-            messages=[{"role": "user", "content": user_content}],
-        )
-        return response.content[0].text.strip()
-    except Exception as exc:
-        log.error("Extraction failed (%s): %s", source_url, exc)
-        return ""
+    async with _get_llm_semaphore():
+        log.info("LLM extract: acquiring slot for %r", source_url)
+        try:
+            response = await client.messages.create(
+                model=MODEL,
+                max_tokens=MAX_TOKENS,
+                messages=[{"role": "user", "content": user_content}],
+            )
+            return response.content[0].text.strip()
+        except Exception as exc:
+            log.error("Extraction failed (%s): %s", source_url, exc)
+            return ""
 
 
 # ── Final HTML generation ─────────────────────────────────────────────────────
@@ -428,6 +449,7 @@ Dark footer page (primary bg):
 ═══════════════════════════════════════════════
 TECHNICAL REQUIREMENTS
 ═══════════════════════════════════════════════
+- DO NOT add any sticky or fixed navigation bar, top bar, or header bar with section links — no nav element at all.
 - Fully self-contained HTML — ALL CSS inside one <style> tag. Zero external resources, CDN links, or web fonts.
 - Font stack: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif
 - Max content width: 1000px, centered with auto margins
@@ -481,6 +503,8 @@ async def generate_cim_html(
     listing_name: str,
     asking_price: str,
     all_images: list[dict] | None = None,
+    logo_b64: str = "",
+    logo_mime: str = "",
 ) -> str:
     """Send all per-file findings + listing context + images to Claude → returns full HTML CIM."""
     client = get_client()
@@ -549,7 +573,25 @@ async def generate_cim_html(
                 "text": f"(Above image is Image {seq_i}: \"{label}\". Use marker <!-- IMG:{seq_i} --> to embed it.)",
             })
 
-    user_content.append({"type": "text", "text": _HTML_PROMPT})
+    logo_instruction = ""
+    if logo_b64 and logo_mime:
+        logo_instruction = (
+            "## Company Logo\n"
+            "A company logo is provided below as a base64 image. "
+            "Place the exact marker <!-- LOGO --> where the logo should appear in the HTML "
+            "(cover page top-left corner only). "
+            "The system will replace <!-- LOGO --> with the actual <img> tag automatically.\n\n"
+        )
+        user_content.append({"type": "text", "text": logo_instruction})
+        user_content.append({
+            "type": "image",
+            "source": {"type": "base64", "media_type": logo_mime, "data": logo_b64},
+        })
+
+    user_content.append({
+        "type": "text",
+        "text": f"Today's date is {date.today().strftime('%B %d, %Y')}.\n\n" + _HTML_PROMPT,
+    })
 
     try:
         # Use streaming — HTML generation can exceed 10 minutes with many images
@@ -566,6 +608,19 @@ async def generate_cim_html(
         if html.startswith("```"):
             lines = html.split("\n")
             html = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
+
+        # Inject logo at top-left of cover page regardless of where Claude placed <!-- LOGO -->
+        if logo_b64 and logo_mime:
+            logo_tag = (
+                f'<div style="position:absolute;top:1.5rem;left:2rem;z-index:10;">'
+                f'<img src="data:{logo_mime};base64,{logo_b64}" alt="Company Logo" '
+                f'style="max-height:60px;max-width:180px;object-fit:contain;display:block;"/>'
+                f'</div>'
+            )
+            # Remove any <!-- LOGO --> markers Claude may have placed
+            html = html.replace("<!-- LOGO -->", "")
+            # Inject right after <body> open tag so it sits over the cover page
+            html = html.replace("<body>", f"<body>{logo_tag}", 1)
 
         # Replace <!-- IMG:N --> markers with actual base64 img tags (sequential over valid images)
         for seq_i, (_orig_i, img) in enumerate(valid_images, start=1):

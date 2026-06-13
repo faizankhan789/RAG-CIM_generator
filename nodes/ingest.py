@@ -20,11 +20,12 @@ async def ingest_node(state: CIMState) -> dict:
     sheets = by_type[FileType.SPREADSHEET]
     images = by_type[FileType.IMAGE]
     ppts = by_type[FileType.PPT]
+    words = by_type.get(FileType.WORD, [])
     unknown = by_type.get(FileType.UNKNOWN, [])
 
     log.info(
-        "Ingest: pdf=%d  spreadsheet=%d  image=%d  ppt=%d  skipped=%d",
-        len(pdf), len(sheets), len(images), len(ppts), len(unknown),
+        "Ingest: pdf=%d  spreadsheet=%d  image=%d  ppt=%d  word=%d  skipped=%d",
+        len(pdf), len(sheets), len(images), len(ppts), len(words), len(unknown),
     )
 
     return {
@@ -32,6 +33,7 @@ async def ingest_node(state: CIMState) -> dict:
         "spreadsheet_files": sheets,
         "image_files": images,
         "ppt_files": ppts,
+        "word_files": words,
         "extracted": [],
         "errors": [],
         "all_findings": [],

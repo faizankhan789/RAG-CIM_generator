@@ -30,6 +30,13 @@ _EXT_MAP: dict[str, FileType] = {
     "ppt": FileType.PPT,
     "pptm": FileType.PPT,
     "odp": FileType.PPT,
+    # Word
+    "docx": FileType.WORD,
+    "doc": FileType.WORD,
+    "docm": FileType.WORD,
+    "odt": FileType.WORD,
+    "rtf": FileType.WORD,
+    "txt": FileType.WORD,
 }
 
 # Maps content-type header → FileType (partial match on prefix)
@@ -48,6 +55,13 @@ _MIME_MAP: dict[str, FileType] = {
     "application/vnd.openxmlformats-officedocument.presentationml.presentation": FileType.PPT,
     "application/vnd.ms-powerpoint": FileType.PPT,
     "application/vnd.oasis.opendocument.presentation": FileType.PPT,
+    # Word
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": FileType.WORD,
+    "application/msword": FileType.WORD,
+    "application/vnd.oasis.opendocument.text": FileType.WORD,
+    "application/rtf": FileType.WORD,
+    "text/rtf": FileType.WORD,
+    "text/plain": FileType.WORD,
 }
 
 

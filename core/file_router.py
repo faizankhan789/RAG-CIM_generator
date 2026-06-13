@@ -44,7 +44,7 @@ def flatten_tree(
             if not url:
                 return items
             name = node.get("name") or node.get("label") or label_prefix or url
-            mime_type = node.get("mime_type", "")
+            mime_type = node.get("mime_type") or node.get("mimeType", "")
             ft = file_type_from_url(url, content_type=mime_type)
             if ft == FileType.UNKNOWN and name:
                 ft = file_type_from_url(name)

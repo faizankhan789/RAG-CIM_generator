@@ -13,6 +13,7 @@ class FileType(str, Enum):
     SPREADSHEET = "spreadsheet"
     IMAGE = "image"
     PPT = "ppt"
+    WORD = "word"
     UNKNOWN = "unknown"
 
 
@@ -158,17 +159,3 @@ class Appendix(BaseModel):
     product_lifecycle_analysis: str | None = None
     market_segmentation_map: str | None = None
 
-
-class CIMOutput(BaseModel):
-    executive_summary: ExecutiveSummary = Field(default_factory=ExecutiveSummary)
-    company_overview: CompanyOverview = Field(default_factory=CompanyOverview)
-    financial_information: FinancialInformation = Field(default_factory=FinancialInformation)
-    operations: Operations = Field(default_factory=Operations)
-    marketing_and_sales: MarketingAndSales = Field(default_factory=MarketingAndSales)
-    legal_and_regulatory: LegalAndRegulatory = Field(default_factory=LegalAndRegulatory)
-    human_resources: HumanResources = Field(default_factory=HumanResources)
-    growth_opportunities: GrowthOpportunities = Field(default_factory=GrowthOpportunities)
-    risks: Risks = Field(default_factory=Risks)
-    appendix: Appendix = Field(default_factory=Appendix)
-    errors: list[ExtractionError] = Field(default_factory=list)
-    sources: list[str] = Field(default_factory=list)

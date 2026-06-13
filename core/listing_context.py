@@ -1,10 +1,23 @@
 def build_listing_xml(listing_data: dict) -> str:
-    """Build a populated <ListingContext> XML string from a CRM listing row dict.
+    """Build a populated <ListingContext> XML string from a CRM listing dict.
 
-    listing_data keys are CRM fieldNames (e.g. 'c_listing_askingprice_c').
-    Only fields with non-empty values are included.
+    Accepts two formats:
+    - CRM field names (e.g. 'c_listing_askingprice_c') — old direct-DB format
+    - Human-readable labels (e.g. 'Asking Price') — new actionListingDetail format
     """
+    import re
+
+    def _safe(text: str) -> str:
+        return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+    def _to_tag(label: str) -> str:
+        tag = re.sub(r"[^a-zA-Z0-9]", "", label.title().replace(" ", ""))
+        return tag if tag and tag[0].isalpha() else "Field" + tag
+
     lines = ["<ListingContext>"]
+    emitted: set[str] = set()
+
+    # Pass 1 — known CRM field names
     for field_name, tag in FIELD_LABEL_MAP.items():
         value = listing_data.get(field_name)
         if value is None:
@@ -12,8 +25,24 @@ def build_listing_xml(listing_data: dict) -> str:
         text = str(value).strip()
         if not text:
             continue
-        safe = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-        lines.append(f"  <{tag}>{safe}</{tag}>")
+        lines.append(f"  <{tag}>{_safe(text)}</{tag}>")
+        emitted.add(tag)
+
+    # Pass 2 — human-readable label keys (new format from actionListingDetail)
+    for key, value in listing_data.items():
+        if key in FIELD_LABEL_MAP:
+            continue  # already handled above
+        if value is None:
+            continue
+        text = str(value).strip()
+        if not text or text.lower() in ("none", "null", "0"):
+            continue
+        tag = _to_tag(str(key))
+        if tag in emitted:
+            continue
+        lines.append(f"  <{tag}>{_safe(text)}</{tag}>")
+        emitted.add(tag)
+
     lines.append("</ListingContext>")
     return "\n".join(lines)
 
