@@ -213,8 +213,11 @@ Retail, Manufacturing, Real Estate, Education, Logistics, Professional Services,
 ═══════════════════════════════════════════════
 STEP 2 — CHOOSE DESIGN SYSTEM
 ═══════════════════════════════════════════════
-Pick the palette and personality that matches the industry:
+⚑ BRAND COLORS: If a "Brand Colors" block appears in your input, use those hex values
+  as primary and accent. Derive light (primary at ~5% opacity over white) and mid
+  (midpoint blend of primary + accent). Do NOT use the industry defaults below in that case.
 
+Fallback industry palettes (use ONLY if no brand colors provided):
 - Hotel/Hospitality     → primary:#1a0a0e  accent:#b8902a  light:#fdf6ec  mid:#6b1f2a   — opulent, serif-inspired
 - Restaurant/Food       → primary:#1c0f0a  accent:#c9622a  light:#fef9f5  mid:#7a3520   — warm, bold, appetising
 - Travel/Tourism        → primary:#021e35  accent:#e6a817  light:#f0f8ff  mid:#0d4f72   — adventurous, bright
@@ -235,6 +238,34 @@ Industry KPIs — use ONLY metrics actually present in the data:
 - Healthcare: Patient Volume, Procedures/Day, Payer Mix, Certifications
 - Retail: Same-Store Sales, Inventory Turns, SKU Count, Basket Size
 - Real Estate: Cap Rate, NOI, Occupancy %, Lease Terms, Price/SqFt
+
+═══════════════════════════════════════════════
+STEP 2b — SECTION LAYOUT COMPONENTS
+═══════════════════════════════════════════════
+For each section body, pick component(s) from this library based on data volume and type.
+Do NOT force a fixed layout — adapt to what the data actually supports.
+
+COMPONENT LIBRARY:
+▸ [stat-strip]      Horizontal KPI cards on dark background. Use when 3+ numeric metrics exist.
+▸ [narrative-pull]  Large pull-quote paragraph with accent left-border. For text-rich, metric-light sections.
+▸ [two-col-60-40]   Left 60% narrative + right 40% highlight box. Good for overview/intro sections.
+▸ [two-col-50-50]   Equal columns. Use when two equally weighted topics exist side by side.
+▸ [data-table]      Financial or comparison table. Use for any tabular or multi-period financial data.
+▸ [card-grid-2]     2-column cards. Use for 2-4 equal items (team members, features, locations).
+▸ [card-grid-3]     3-column cards. Use for 5+ equal items.
+▸ [timeline]        Numbered vertical steps. Use for growth plans, milestones, roadmap, history.
+▸ [swot-grid]       2×2 quadrant. Only for SWOT section.
+▸ [image-hero]      Full-width image, max-height 480px. Use for best property/exterior/product shot.
+▸ [image-mosaic]    2-3 column image gallery. Use when 3+ contextually relevant images exist.
+▸ [bullet-list]     Styled accent-dot bullet points. Use for lists of 5+ items without card structure.
+
+SELECTION RULES:
+- Sparse data (1-3 points) → [narrative-pull] or [two-col-60-40]
+- Rich financial data → [data-table] above or below a [stat-strip]
+- Team section → [card-grid-2] (≤4 people) or [card-grid-3] (5+)
+- Growth/strategy/roadmap → [timeline]
+- Never use identical layout for two adjacent sections — vary for visual rhythm
+- Combine freely: e.g. [stat-strip] + [two-col-60-40] + [data-table] all in one section
 
 ═══════════════════════════════════════════════
 STEP 3 — BUILD THE DOCUMENT
@@ -505,6 +536,8 @@ async def generate_cim_html(
     all_images: list[dict] | None = None,
     logo_b64: str = "",
     logo_mime: str = "",
+    brand_primary: str = "",
+    brand_accent: str = "",
 ) -> str:
     """Send all per-file findings + listing context + images to Claude → returns full HTML CIM."""
     client = get_client()
@@ -572,6 +605,22 @@ async def generate_cim_html(
                 "type": "text",
                 "text": f"(Above image is Image {seq_i}: \"{label}\". Use marker <!-- IMG:{seq_i} --> to embed it.)",
             })
+
+    if brand_primary and brand_accent:
+        user_content.append({
+            "type": "text",
+            "text": (
+                f"## Brand Colors\n"
+                f"primary: {brand_primary}\n"
+                f"accent: {brand_accent}\n"
+                f"Use these exact hex values as primary and accent throughout the CIM "
+                f"(cover, section headers, stat strips, accents). "
+                f"Derive light = very pale tint of primary (~5% opacity over white). "
+                f"Derive mid = blend of primary and accent at 50%. "
+                f"Do NOT use the industry fallback palette from STEP 2."
+            ),
+        })
+        log.info("LLM: brand colors injected — primary=%s accent=%s", brand_primary, brand_accent)
 
     logo_instruction = ""
     if logo_b64 and logo_mime:
