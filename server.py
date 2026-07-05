@@ -12,8 +12,11 @@ load_dotenv()
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
-    datefmt="%H:%M:%S",
-    stream=sys.stdout,
+    datefmt="%Y-%m-%d %H:%M:%S",
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler("cim.log", encoding="utf-8"),
+    ],
 )
 # Silence noisy third-party loggers
 for _lib in ("anthropic", "httpx", "httpcore", "langgraph", "uvicorn.access"):
@@ -66,10 +69,34 @@ def _build_file_tree(req: CIMRequest) -> list[dict]:
     return tree
 
 
+def _log_request_details(req: CIMRequest, listing_name: str, asking_price: str) -> None:
+    log.info("═══ CIM REQUEST ═══════════════════════════════")
+    log.info("  Listing name  : %s", listing_name or "(none)")
+    log.info("  Asking price  : %s", asking_price or "(none)")
+    log.info("  Logo URL      : %s", req.logo or "(none)")
+
+    if req.listing_data:
+        skip = {"Name", "name", "Asking Price", "c_listing_askingprice_c"}
+        fields = {k: v for k, v in req.listing_data.items() if k not in skip and v not in (None, "", [])}
+        log.info("  Listing data fields (%d):", len(req.listing_data))
+        for k, v in fields.items():
+            log.info("    %-30s: %s", k, str(v)[:120])
+
+    log.info("  Listing files (%d):", len(req.listing_files))
+    for f in req.listing_files:
+        log.info("    [%s] %s", f.mimeType or "?", f.name)
+
+    log.info("  Gallery images (%d):", len(req.gallery_images))
+    for url in req.gallery_images:
+        log.info("    %s", url.split("?")[0])
+    log.info("═══════════════════════════════════════════════")
+
+
 def _build_initial_state(req: CIMRequest) -> dict:
     listing_xml = build_listing_xml(req.listing_data) if req.listing_data else ""
     listing_name = req.listing_data.get("Name") or req.listing_data.get("name", "")
     asking_price = str(req.listing_data.get("Asking Price") or req.listing_data.get("c_listing_askingprice_c", ""))
+    _log_request_details(req, listing_name, asking_price)
     return {
         "file_tree": _build_file_tree(req),
         "listing_xml": listing_xml,

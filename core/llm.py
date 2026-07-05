@@ -55,10 +55,12 @@ PRIORITY RULES:
 - Where both overlap: combine, with <ListingContext> taking precedence for figures.
 
 CRITICAL — numbers:
-- Copy ALL financial figures, percentages, dates, and quantities EXACTLY as they appear.
-- Never round, abbreviate, convert, or reformat any number.
+- Copy ALL financial figures, percentages, dates, and quantities EXACTLY as they appear in the source.
+- Never round, abbreviate, convert, or reformat any number (e.g. £123,450 must stay £123,450 — not £123k, not £120,000).
 - Preserve currency symbols, units (USD, £, €, %, x, bps), and date formats exactly.
-- Never invent or infer numbers not explicitly stated.
+- Never invent or infer numbers not explicitly stated in the source documents.
+- If a number is not in the source, DO NOT include it — omit the subtopic entirely rather than estimate or approximate.
+- Do NOT use industry benchmarks or typical ranges as if they are this business's actual figures.
 
 INDUSTRY SIGNALS — always note:
 - Business type, sector, cuisine type, service category, star rating, etc.
@@ -70,95 +72,117 @@ Map everything you find to the relevant CIM section below.
 Use these exact markdown headings — only include a heading if you found actual data for it.
 
 ## I. Executive Summary
-- Brief business description, what it does, where it operates
+- Brief overview of the business (what it does, where it operates)
 - Key investment highlights and unique selling points
-- Financial performance summary (top-line revenue, profit, margins)
-- Asking price and deal terms if stated
+- Summary of financial performance (revenue, profit, margins — exact figures only)
+- Asking price and key terms
 
 ## II. Company Overview
-- History, founding year, milestones, ownership structure
-- Vision, mission, values, company culture
-- Management team: names, titles, experience, tenure
-- Location(s), premises description, lease or freehold details
-- Products and services offered
-- Competitive advantages and differentiators
-- Market position, market size, industry overview
-- SWOT findings (strengths, weaknesses, opportunities, threats)
-- Social responsibility or sustainability initiatives
+- History and background (founding year, milestones)
+- Ownership structure
+- Values
+- Management team and key personnel (names, titles, tenure)
+- Organizational chart (if org structure data present)
+- Culture
+- Vision and Mission
+- Location and facilities (premises, lease/freehold, sq ft)
+- Products and services
+- Competitive advantages
+- Market position and industry overview
+- Social Responsibility & Sustainability
+- SWOT analysis (strengths, weaknesses, opportunities, threats)
 
 ## III. Financial Information
-- Revenue figures (annual, monthly, by stream) — exact numbers
-- Gross profit, EBITDA, net profit — exact figures
-- Adjusted EBITDA and add-backs if stated
-- Revenue stream breakdown (e.g. dine-in vs delivery, rooms vs F&B)
-- KPIs relevant to the industry (exact values only)
-- Year-on-year trends, growth rates
-- Financial projections or forecasts if provided
-- Cost structure: COGS, labour, rent, overheads — exact figures
-- Debt, loans, liabilities if stated
-- Tax position if mentioned
-- Capitalization or ownership percentages
+- Historical financial statements (exact figures only)
+- Adjusted EBITDA and other relevant metrics (exact figures only)
+- Detailed breakdown of revenue streams
+- Key performance indicators (KPIs) — industry-specific, exact values only
+- Tax information
+- Financial ratios and trends
+- Projections and forecasts (only if explicitly stated in source)
+- Cost structure analysis (COGS, labour, rent, overheads — exact figures)
+- Capitalization table (if ownership/equity data present)
+- Debt structure (loans, liabilities — exact figures)
 
 ## IV. Operations
-- Core operational processes and workflows
-- Opening hours, trading days, capacity (seats, keys, units, etc.)
-- Supply chain, suppliers, sourcing details
-- Key equipment, technology systems, POS, booking platforms
-- Quality certifications, accreditations, food hygiene ratings
-- R&D or innovation activities
+- Manufacturing processes (adapt name to industry, e.g. Kitchen Operations)
+- Supply chain and logistics
+- Key suppliers and customers
+- Quality certifications and standards
+- Technology and equipment
+- Technology infrastructure & security
+- Research and development
 - Intellectual property (patents, trademarks, recipes, software)
-- Scalability or capacity headroom
+- Scalability and capacity for growth
 
 ## V. Marketing and Sales
-- Target customers and market segmentation
-- Marketing channels used (social, SEO, email, PR, events, etc.)
-- Brand positioning, reputation, online reviews/ratings
-- Sales process and distribution channels
-- Key accounts, repeat customers, loyalty programmes
-- Customer acquisition cost or conversion data if stated
-- Churn rate or retention metrics if stated
+- Target market and customer segmentation
+- Marketing strategies and channels
+- Marketing & sales budgets (if stated)
+- Sales pipeline
+- Customer churn rate (if stated)
+- Sales processes and distribution channels
+- Branding and advertising
+- Customer acquisition costs (if stated)
+- Customer relationship management
 
 ## VI. Legal and Regulatory
-- Legal entity type and registration details
-- Licences and permits (alcohol licence, food hygiene, planning, etc.)
-- Key contracts: leases, supplier agreements, franchise agreements
-- Insurance policies
-- Any litigation, disputes, or regulatory issues
-- Data privacy and GDPR compliance notes
-- Environmental compliance
+- Legal structure and compliance
+- Permits and licenses
+- Data privacy & security (GDPR, compliance)
+- Insurance coverage
+- Intellectual property strategy
+- Contracts and agreements (leases, supplier, franchise)
+- Environmental regulations
+- International compliance (if applicable)
+- Litigation and disputes
 
 ## VII. Human Resources
-- Total headcount (full-time / part-time / seasonal)
-- Key staff roles and seniority
-- Compensation structure, salary bands, tips policy
-- Staff tenure and retention
-- Training programmes and certifications
-- Succession plan or owner dependency risks
-- Union or labour agreements
+- Employee demographics and compensation (headcount, FT/PT, salary bands)
+- Benefits and training programs
+- Management succession plan
+- Key employee retention strategies
+- Employee turnover rate (if stated)
+- Labor relations and unions
 
 ## VIII. Growth Opportunities
-- Identified growth levers (new locations, extended hours, new revenue streams)
-- New product or service development plans
-- Market expansion or international plans
-- Strategic partnership or franchise potential
-- M&A opportunities mentioned
-- Untapped market segments
+- Expansion plans and strategies
+- New product development
+- International expansion (if applicable)
+- Strategic partnerships
+- Market penetration and diversification
+- Joint ventures & alliances
+- Franchise opportunities (if applicable)
+- Mergers and acquisitions
 
-## IX. Risk Factors
-- Market or economic risks
-- Competitive threats
-- Operational risks (key person dependency, supplier concentration, etc.)
-- Financial risks (debt, thin margins, seasonality)
-- Legal or regulatory risks
-- Technology or cybersecurity risks
-- Reputational risks
+## IX. Risks
+- Industry and market risks
+- Competition
+- Financial risks
+- Reputation & brand risks
+- Technology risks
+- Political & economic risks
+- Environmental, Social, and Governance (ESG) risks
+- Operational risks
+- Risk assessment matrix (if risk data is sufficient for a matrix)
+- Legal and regulatory risks
 
-## X. Appendix Material
-- Any supporting data, charts, tables, testimonials, awards
-- Raw financial statement data not summarised above
-- Any other notable facts not captured in sections I–IX
+## X. Appendix
+- Detailed financial statements
+- Market research data
+- Appraisals and valuations
+- Legal documents
+- Customer testimonials
+- Industry awards and recognition
+- Customer journey map (if customer flow/experience data present)
+- Competitive analysis matrix (if competitor data present)
+- Value chain analysis (if value chain data present)
+- Product lifecycle analysis (if product stage data present)
+- Market segmentation map (if segmentation data present)
 
-Return ONLY the populated markdown. No preamble, no commentary, no empty sections."""
+Return ONLY the populated markdown. No preamble, no commentary, no empty sections.
+Map ALL data into sections I–X only. Do NOT create any section outside this list.
+Omit any section or subtopic entirely if there is no real data for it."""
 
 
 async def extract_from_content(
@@ -272,14 +296,27 @@ STEP 3 — BUILD THE DOCUMENT
 ═══════════════════════════════════════════════
 
 CRITICAL DATA RULES:
-- Copy ALL financial figures, percentages, dates EXACTLY — never round, abbreviate, or infer.
+- Copy ALL financial figures, percentages, dates EXACTLY as they appear in the source data — never round, abbreviate, or infer.
 - Include ONLY sections where you have actual data — skip sections with no content.
 - Never invent metrics, names, or figures not present in the source data.
+- STRICT STRUCTURE: Generate ONLY sections I through X as defined above. Do NOT create any section, heading, or topic outside this list. No bonus sections, no summaries, no additional pages beyond Cover, TOC, sections I–X, and Disclaimer.
+- IGNORE internal CRM metadata: do NOT include CRM IDs, usernames, system dates, listing status, campaign IDs, NDA flags, or any other internal admin fields in the document. These are system fields, not business content.
+- EMPTY SUBTOPIC RULE: If a subtopic has no data, omit it entirely — do NOT show a heading with empty or placeholder content.
+
+⛔ FINANCIAL NUMBER RULES — STRICTLY ENFORCED:
+- Every number, figure, percentage, currency amount, ratio, and date in the output MUST come directly from the source data provided. NO exceptions.
+- FORBIDDEN: rounding (e.g. source says £123,450 → do NOT write £123k or £120,000)
+- FORBIDDEN: inferring (e.g. if only revenue is given → do NOT calculate or guess profit margin)
+- FORBIDDEN: averaging or estimating (e.g. do NOT write "approximately £X" unless source says so)
+- FORBIDDEN: industry benchmarks as if they are this business's numbers (e.g. do NOT write "typical margins of 15%" as if it applies here)
+- FORBIDDEN: projections or forecasts unless explicitly stated in source documents
+- If a financial figure is NOT in the source data, leave that subtopic out entirely — do not substitute, estimate, or approximate.
+- When in doubt: OMIT rather than invent.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━
 PAGE 1 — COVER
 ━━━━━━━━━━━━━━━━━━━━━━━━
-Full-viewport cover page (min-height:100vh). Structure:
+Full-page cover (min-height:1080px). Structure:
 - Background: diagonal or radial gradient from primary → mid (dark, rich)
 - Decorative geometric shapes: large semi-transparent circles or diagonal bands in accent color, low opacity (0.08–0.15), absolutely positioned — creates depth without clutter
 - Top bar: "CONFIDENTIAL INFORMATION MEMORANDUM" in small-caps tracking-widest, accent color, subtle top border in accent
@@ -298,7 +335,7 @@ Full-viewport cover page (min-height:100vh). Structure:
 ━━━━━━━━━━━━━━━━━━━━━━━━
 PAGE 2 — TABLE OF CONTENTS
 ━━━━━━━━━━━━━━━━━━━━━━━━
-Clean, typographically elegant. Full-page feel (min-height:80vh, light background).
+Clean, typographically elegant. Full-page feel (min-height:700px, light background).
 - Top: "TABLE OF CONTENTS" heading in primary color, large, bold
 - Thin accent-colored top border
 - Each section: flex row — Roman numeral (accent color, bold, monospace), section title (primary, medium weight), dotted leader line, page anchor arrow →
@@ -324,15 +361,17 @@ Adapt terminology to the detected industry (e.g. "Manufacturing processes" → "
 I. Executive Summary
    • Brief overview of the business
    • Key investment highlights
-   • Summary of financial performance (key revenue/profit figures)
+   • Summary of financial performance
    • Asking price and key terms
 
 II. Company Overview
    • History and background
    • Ownership structure
-   • Vision and Mission
-   • Values and Culture
+   • Values
    • Management team and key personnel
+   • Organizational chart
+   • Culture
+   • Vision and Mission
    • Location and facilities
    • Products and services
    • Competitive advantages
@@ -344,19 +383,21 @@ III. Financial Information
    • Historical financial statements
    • Adjusted EBITDA and other relevant metrics
    • Detailed breakdown of revenue streams
-   • Key performance indicators (KPIs) — use industry-specific metrics
+   • Key performance indicators (KPIs)
+   • Tax information
    • Financial ratios and trends
    • Projections and forecasts
    • Cost structure analysis
+   • Capitalization table
    • Debt structure
-   • Tax information
 
 IV. Operations
-   • Core operational processes (adapt name to industry)
+   • Manufacturing processes (adapt name to industry, e.g. Kitchen Operations for restaurants)
    • Supply chain and logistics
    • Key suppliers and customers
-   • Technology and equipment
    • Quality certifications and standards
+   • Technology and equipment
+   • Technology infrastructure & security
    • Research and development
    • Intellectual property
    • Scalability and capacity for growth
@@ -364,56 +405,67 @@ IV. Operations
 V. Marketing and Sales
    • Target market and customer segmentation
    • Marketing strategies and channels
+   • Marketing & sales budgets
+   • Sales pipeline
+   • Customer churn rate
    • Sales processes and distribution channels
    • Branding and advertising
-   • Customer relationship management
-   • Sales pipeline
    • Customer acquisition costs
-   • Customer churn rate (if applicable)
+   • Customer relationship management
 
 VI. Legal and Regulatory
    • Legal structure and compliance
    • Permits and licenses
-   • Key contracts and agreements
+   • Data privacy & security
    • Insurance coverage
-   • Data privacy and security
+   • Intellectual property strategy
+   • Contracts and agreements
    • Environmental regulations
+   • International compliance
    • Litigation and disputes
 
 VII. Human Resources
-   • Employee demographics and headcount
-   • Compensation and benefits
-   • Training programs
-   • Key employee retention strategies
+   • Employee demographics and compensation
+   • Benefits and training programs
    • Management succession plan
-   • Labor relations
+   • Key employee retention strategies
+   • Employee turnover rate
+   • Labor relations and unions
 
 VIII. Growth Opportunities
    • Expansion plans and strategies
-   • New product / service development
-   • Market penetration and diversification
+   • New product development
+   • International expansion
    • Strategic partnerships
-   • International expansion (if applicable)
-   • Franchise or licensing opportunities (if applicable)
-   • Mergers and acquisitions potential
+   • Market penetration and diversification
+   • Joint ventures & alliances
+   • Franchise opportunities
+   • Mergers and acquisitions
 
-IX. Risk Factors
+IX. Risks
    • Industry and market risks
-   • Competitive risks
+   • Competition
    • Financial risks
+   • Reputation & brand risks
+   • Technology risks
+   • Political & economic risks
+   • Environmental, Social, and Governance (ESG) risks
    • Operational risks
+   • Risk assessment matrix
    • Legal and regulatory risks
-   • Technology and cybersecurity risks
-   • Reputation and brand risks
-   • ESG risks
 
 X. Appendix
-   • Supporting financial statements
+   • Detailed financial statements
    • Market research data
    • Appraisals and valuations
-   • Key legal documents
+   • Legal documents
    • Customer testimonials
    • Industry awards and recognition
+   • Customer journey map
+   • Competitive analysis matrix
+   • Value chain analysis
+   • Product lifecycle analysis
+   • Market segmentation map
 
 ━━━━━━━━━━━━━━━━━━━━━━━━
 CONTENT SECTIONS — LAYOUT
@@ -484,7 +536,7 @@ TECHNICAL REQUIREMENTS
 - Fully self-contained HTML — ALL CSS inside one <style> tag. Zero external resources, CDN links, or web fonts.
 - Font stack: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif
 - Max content width: 1000px, centered with auto margins
-- The cover page and TOC are full-viewport — subsequent sections have generous padding (3rem+)
+- The cover page and TOC use fixed-height pages — subsequent sections have generous padding (3rem+)
 - Smooth scroll: html { scroll-behavior: smooth }
 - Financial numbers: font-variant-numeric: tabular-nums
 - Print media: @media print { .no-print { display:none } section { page-break-before: always } }

@@ -17,8 +17,10 @@ def build_listing_xml(listing_data: dict) -> str:
     lines = ["<ListingContext>"]
     emitted: set[str] = set()
 
-    # Pass 1 — known CRM field names
+    # Pass 1 — known CRM field names (skip internal-only fields)
     for field_name, tag in FIELD_LABEL_MAP.items():
+        if tag in _INTERNAL_TAGS:
+            continue
         value = listing_data.get(field_name)
         if value is None:
             continue
@@ -32,19 +34,46 @@ def build_listing_xml(listing_data: dict) -> str:
     for key, value in listing_data.items():
         if key in FIELD_LABEL_MAP:
             continue  # already handled above
+        if key in _INTERNAL_LABEL_KEYS:
+            continue  # skip internal CRM metadata
         if value is None:
             continue
         text = str(value).strip()
         if not text or text.lower() in ("none", "null", "0"):
             continue
         tag = _to_tag(str(key))
-        if tag in emitted:
+        if tag in emitted or tag in _INTERNAL_TAGS:
             continue
         lines.append(f"  <{tag}>{_safe(text)}</{tag}>")
         emitted.add(tag)
 
     lines.append("</ListingContext>")
     return "\n".join(lines)
+
+
+# Internal CRM tags that should never appear in the CIM document
+_INTERNAL_TAGS: set[str] = {
+    "ID", "NameID", "CRMUser", "CreateDate", "LastUpdated", "LastActivity",
+    "UpdatedBy", "CreatedBy", "ModifiedBy", "Visibility", "AutomaticReleaseFiles",
+    "CampaignID", "NoOfViews", "ListingStatus", "SalesStage", "NDA",
+    "ListingFilesTemplate", "FilesAndFolders", "DescriptionIsHTML",
+    "FrontendURL", "Thumbnail", "Media1", "Media2", "Media3", "Media4", "Media5",
+    "MetaDescription", "MarketingSitesListingIsPostedOn", "DateEntered",
+    "DateModified", "DateAgreementExpired", "DateAgreementSigned",
+    "ExpirationDate", "ExpiryDate", "OpportunityType", "Broker",
+}
+
+# Human-readable label keys from actionListingDetail that are internal CRM metadata
+_INTERNAL_LABEL_KEYS: set[str] = {
+    "id", "nameId", "assignedTo", "createDate", "lastUpdated", "lastActivity",
+    "updatedBy", "createdBy", "modifiedBy", "visibility", "CRM Listing ID",
+    "Reference ID", "Name ID", "CRM User", "Created By", "Modified By",
+    "Date Approved (Unix)", "Listing Created (Unix)", "Listing Modified (Unix)",
+    "No Of Views", "Sales Stage", "Campaign ID", "NDA", "Automatic Release Files",
+    "Listing Files Template", "Files And Folders", "Description Is HTML",
+    "Frontend URL", "Thumbnail", "Meta Description",
+    "Marketing Sites Listing Is Posted On",
+}
 
 
 FIELD_LABEL_MAP: dict[str, str] = {
