@@ -57,6 +57,30 @@ class CIMRequest(BaseModel):
     logo: str = ""
     gallery_images: list[str] = []
     listing_files: list[ListingFile] = []
+    callback_url: str = ""   # PHP endpoint to POST finished HTML to
+    listing_id: int = 0      # CRM listing ID for the callback relationship
+
+
+async def _do_callback(callback_url: str, html: str, listing_name: str, listing_id: int, doc_id: int = 0) -> int | None:
+    """POST finished CIM HTML to PHP so it's saved even if the browser tab was closed."""
+    if not callback_url or not html:
+        return None
+    import httpx
+    payload = {"html": html, "name": listing_name, "listing_id": listing_id}
+    if doc_id:
+        payload["doc_id"] = doc_id
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(callback_url, json=payload, timeout=30)
+            data = resp.json()
+            if data.get("success"):
+                log.info("CIM callback saved — doc_id=%s", data.get("doc_id"))
+                return data.get("doc_id")
+            else:
+                log.error("CIM callback error: %s", data.get("error"))
+    except Exception as exc:
+        log.error("CIM callback failed: %s", exc)
+    return None
 
 
 def _build_file_tree(req: CIMRequest) -> list[dict]:
@@ -153,7 +177,14 @@ async def generate_cim_stream(req: CIMRequest):
             result = await pipeline_task
             html = result.get("cim_output", "")
             errors = [e.model_dump() for e in result.get("errors", [])]
-            yield sse({"step": 5, "label": "Complete", "message": "CIM successfully generated.", "status": "complete", "html": html, "errors": errors})
+            listing_name = req.listing_data.get("Name") or req.listing_data.get("name", "Listing")
+            doc_id = None
+            if req.callback_url:
+                try:
+                    doc_id = await _do_callback(req.callback_url, html, listing_name, req.listing_id)
+                except Exception as cb_exc:
+                    log.error("CIM callback raised in stream: %s", cb_exc)
+            yield sse({"step": 5, "label": "Complete", "message": "CIM successfully generated.", "status": "complete", "html": html, "doc_id": doc_id, "errors": errors})
         except Exception as exc:
             log.error("Stream pipeline failed: %s", exc)
             yield sse({"step": 0, "label": "Error", "message": str(exc), "status": "error"})

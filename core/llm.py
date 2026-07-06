@@ -7,6 +7,7 @@ import base64
 import io
 import logging
 import os
+import re
 from typing import Any
 
 import anthropic
@@ -319,18 +320,18 @@ PAGE 1 — COVER
 Full-page cover (min-height:1080px). Structure:
 - Background: diagonal or radial gradient from primary → mid (dark, rich)
 - Decorative geometric shapes: large semi-transparent circles or diagonal bands in accent color, low opacity (0.08–0.15), absolutely positioned — creates depth without clutter
-- Top bar: "CONFIDENTIAL INFORMATION MEMORANDUM" in small-caps tracking-widest, accent color, subtle top border in accent
-- CENTER BLOCK (vertically centered):
-    • Industry badge pill (e.g. "RESTAURANT & FOOD SERVICE") — accent background, white text, rounded-full, uppercase, letter-spacing
-    • Business name: massive (clamp(3rem,8vw,6rem)), white, bold, line-height 1.1, max 2 lines
-    • Tasteful thin horizontal rule in accent color below name
-    • Tagline or location if available — light/60 color, italic, 1.2rem
-    • Asking price block: large accent-colored chip — "Asking Price" label above, price value bold 2.5rem white
+- Top bar: flex row, space-between. LEFT side: <!-- LOGO --> placeholder (if logo provided) OR empty. RIGHT side: "CONFIDENTIAL INFORMATION MEMORANDUM" in small-caps tracking-widest, accent color, text-align:right. Subtle top border in accent color across full width. This keeps the logo and CIM title on opposite sides with no overlap.
+- CENTER BLOCK (vertically centered, text-align:center, align-items:center — ALL content MUST be centered horizontally):
+    • Industry badge pill (e.g. "RESTAURANT & FOOD SERVICE") — accent background, white text, rounded-full, uppercase, letter-spacing, margin:0 auto
+    • Business name: massive (clamp(3rem,8vw,6rem)), white, bold, line-height 1.1, max 2 lines, text-align:center
+    • Tasteful thin horizontal rule in accent color below name, width:80px, margin:0 auto
+    • Tagline or location if available — light/60 color, italic, 1.2rem, text-align:center
+    • Asking price block: large accent-colored chip — "Asking Price" label above, price value bold 2.5rem white, centered
 - BOTTOM BAR: dark translucent band across full width:
     • Left: "Prepared exclusively for prospective acquirers" — muted italic
     • Center: current date
     • Right: "STRICTLY PRIVATE & CONFIDENTIAL"
-- If images are available: place the best property/exterior/product photo as <!-- IMG:1 --> BEHIND the center block as a full-bleed background image with a dark overlay (overlay div with background rgba(0,0,0,0.55)), so the image is visible but text is clear. Use object-fit:cover, position:absolute, width:100%, height:100%, z-index:0. All text content at z-index:1.
+- If images are available AND contextually relevant (property, storefront, food, team — NOT random objects, dice, icons, or unrelated images): use <!-- IMG:1 --> as a CSS background on the cover div. NEVER place it as a <figure> or <img> above the top bar. Implementation: the cover div must have position:relative; overflow:hidden. Inside it, as the very first child, place: <div style="position:absolute;inset:0;z-index:0;"><img src="..." style="width:100%;height:100%;object-fit:cover;opacity:0.25;"/></div> followed by a <div style="position:absolute;inset:0;background:rgba(0,0,0,0.50);z-index:1;"></div>. All cover content (top bar, center block, bottom bar) at z-index:2. If the image is not contextually relevant (e.g. dice, generic clipart, icons), skip it entirely — use no image rather than a wrong one.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━
 PAGE 2 — TABLE OF CONTENTS
@@ -637,12 +638,13 @@ async def generate_cim_html(
             "text": (
                 f"## Images ({len(valid_images)} available)\n"
                 "Below are images from the data room / image gallery. "
-                "For each image, decide if it adds visual value to the CIM "
-                "(property photos, product shots, facility images, team photos, charts, etc.). "
+                "For each image, decide if it adds visual value to the CIM. "
+                "ONLY use images that are contextually relevant: property/storefront exterior, food/product shots, team/staff photos, equipment, charts or financials. "
+                "SKIP any image that is NOT directly related to the business — e.g. dice, playing cards, random objects, clipart, stock icons, logos of unrelated companies. When in doubt, skip it. "
                 f"To embed image N, place the exact marker <!-- IMG:N --> in your HTML where you want it. "
                 "The system will replace the marker with the actual image. "
                 "Use good placement — inside the relevant section, with surrounding context. "
-                "Skip images that are not visually meaningful (icons, thumbnails, decorative images)."
+                "NEVER place an image above the cover top bar or outside the cover's normal content flow."
             ),
         })
         for seq_i, (orig_i, img) in enumerate(valid_images, start=1):
@@ -679,9 +681,9 @@ async def generate_cim_html(
         logo_instruction = (
             "## Company Logo\n"
             "A company logo is provided below as a base64 image. "
-            "Place the exact marker <!-- LOGO --> where the logo should appear in the HTML "
-            "(cover page top-left corner only). "
-            "The system will replace <!-- LOGO --> with the actual <img> tag automatically.\n\n"
+            "Place the exact marker <!-- LOGO --> on the LEFT side of the cover page top bar. "
+            "The system will replace <!-- LOGO --> with the actual <img> tag automatically. "
+            "IMPORTANT: because the logo occupies the top-LEFT, place 'CONFIDENTIAL INFORMATION MEMORANDUM' on the top-RIGHT (text-align:right) in the same flex row — never on the left — so they never overlap.\n\n"
         )
         user_content.append({"type": "text", "text": logo_instruction})
         user_content.append({
@@ -710,18 +712,21 @@ async def generate_cim_html(
             lines = html.split("\n")
             html = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
 
-        # Inject logo at top-left of cover page regardless of where Claude placed <!-- LOGO -->
+        # Replace <!-- LOGO --> marker with actual img tag (Claude places it in cover top-bar left)
         if logo_b64 and logo_mime:
-            logo_tag = (
-                f'<div style="position:absolute;top:1.5rem;left:2rem;z-index:10;">'
+            logo_img = (
                 f'<img src="data:{logo_mime};base64,{logo_b64}" alt="Company Logo" '
                 f'style="max-height:60px;max-width:180px;object-fit:contain;display:block;"/>'
-                f'</div>'
             )
-            # Remove any <!-- LOGO --> markers Claude may have placed
-            html = html.replace("<!-- LOGO -->", "")
-            # Inject right after <body> open tag so it sits over the cover page
-            html = html.replace("<body>", f"<body>{logo_tag}", 1)
+            if "<!-- LOGO -->" in html:
+                html = html.replace("<!-- LOGO -->", logo_img, 1)
+            else:
+                # Fallback: inject as absolute-positioned element after <body> open tag
+                logo_tag = (
+                    f'<div style="position:absolute;top:1.5rem;left:2rem;z-index:10;">'
+                    + logo_img + f'</div>'
+                )
+                html = re.sub(r'<body\b[^>]*>', lambda m: m.group(0) + logo_tag, html, count=1)
 
         # Replace <!-- IMG:N --> markers with actual base64 img tags (sequential over valid images)
         for seq_i, (_orig_i, img) in enumerate(valid_images, start=1):
