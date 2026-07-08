@@ -25,13 +25,15 @@ log = logging.getLogger("cim_server")
 
 import asyncio
 import json
+import uuid
+from dataclasses import dataclass, field
+from typing import Any, Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, HTMLResponse, StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 import uvicorn
 from pydantic import BaseModel
-from typing import Any
 
 from core.listing_context import build_listing_xml
 from graph import cim_graph
@@ -58,10 +60,63 @@ class CIMRequest(BaseModel):
     gallery_images: list[str] = []
     listing_files: list[ListingFile] = []
     callback_url: str = ""   # PHP endpoint to POST finished HTML to
-    listing_id: int = 0      # CRM listing ID for the callback relationship
+    listing_id: int = 0      # CRM listing ID — used to key the job
 
 
-async def _do_callback(callback_url: str, html: str, listing_name: str, listing_id: int, doc_id: int = 0) -> int | None:
+# ---------------------------------------------------------------------------
+# Job tracking — in-memory, keyed by listing_id
+# ---------------------------------------------------------------------------
+
+@dataclass
+class CIMJob:
+    """Represents one CIM generation job. Multiple SSE connections can subscribe."""
+    job_id: str
+    listing_id: int
+    status: str                          # "running" | "complete" | "error"
+    events_buffer: list = field(default_factory=list)
+    result_html: str = ""
+    result_doc_id: Optional[int] = None
+    _waiters: list = field(default_factory=list)  # asyncio.Queue per live connection
+
+    def add_event(self, event: dict) -> None:
+        """Append event to buffer and push to all active subscriber queues."""
+        self.events_buffer.append(event)
+        for q in list(self._waiters):   # copy avoids mutation-during-iteration issues
+            q.put_nowait(event)
+
+    def subscribe(self) -> asyncio.Queue:
+        """Return a queue pre-loaded with all past events (replay) + future events."""
+        q: asyncio.Queue = asyncio.Queue()
+        for e in self.events_buffer:    # replay everything emitted so far
+            q.put_nowait(e)
+        self._waiters.append(q)
+        return q
+
+    def unsubscribe(self, q: asyncio.Queue) -> None:
+        try:
+            self._waiters.remove(q)
+        except ValueError:
+            pass
+
+
+# Global job store: listing_id → CIMJob
+_jobs: dict[int, CIMJob] = {}
+
+
+async def _expire_job(listing_id: int, delay: int = 3600) -> None:
+    """Remove job from store after delay seconds (default 1 hour)."""
+    await asyncio.sleep(delay)
+    _jobs.pop(listing_id, None)
+    log.info("Job expired — listing_id=%s", listing_id)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+async def _do_callback(
+    callback_url: str, html: str, listing_name: str, listing_id: int, doc_id: int = 0
+) -> int | None:
     """POST finished CIM HTML to PHP so it's saved even if the browser tab was closed."""
     if not callback_url or not html:
         return None
@@ -140,57 +195,154 @@ def _build_initial_state(req: CIMRequest) -> dict:
     }
 
 
+def _sse(payload: dict) -> str:
+    return f"data: {json.dumps(payload)}\n\n"
 
-_STEPS = [
-    (1, "Downloading",  "Retrieving and cataloguing all source documents from the provided file tree."),
-    (2, "Processing",   "Extracting and analysing content across all uploaded documents in parallel."),
-    (3, "Generating",   "Synthesising key findings and structuring the investment narrative."),
-    (4, "Rendering",    "Composing and formatting the Confidential Information Memorandum."),
-    (5, "Returning",    "Packaging and delivering the completed memorandum."),
-]
+
+# ---------------------------------------------------------------------------
+# Background pipeline runner — independent of any SSE connection
+# ---------------------------------------------------------------------------
+
+async def _run_job_pipeline(req: CIMRequest, job: CIMJob) -> None:
+    """
+    Runs the CIM pipeline as a background task.
+    Emits events to the job's buffer/waiters regardless of SSE connections.
+    Survives browser tab closure because it's an independent asyncio Task.
+    """
+    listing_name = req.listing_data.get("Name") or req.listing_data.get("name", "Listing")
+    log.info("Pipeline started — listing_id=%s name=%r", job.listing_id, listing_name)
+
+    job.add_event({
+        "step": 1, "label": "Downloading",
+        "message": "Retrieving and cataloguing source documents...",
+        "status": "in_progress",
+    })
+
+    pipeline_task = asyncio.create_task(cim_graph.ainvoke(_build_initial_state(req)))
+
+    progress_steps = [
+        (2, "Processing",  "Extracting and analysing content across all documents..."),
+        (3, "Generating",  "Synthesising findings and structuring the investment narrative..."),
+        (4, "Rendering",   "Composing the Confidential Information Memorandum..."),
+    ]
+    for step, label, msg in progress_steps:
+        await asyncio.sleep(50)
+        if pipeline_task.done():
+            break
+        job.add_event({"step": step, "label": label, "message": msg, "status": "in_progress"})
+
+    try:
+        result = await pipeline_task
+        html = result.get("cim_output", "")
+        errors = [e.model_dump() for e in result.get("errors", [])]
+        doc_id = None
+        if req.callback_url:
+            try:
+                doc_id = await _do_callback(req.callback_url, html, listing_name, req.listing_id)
+            except Exception as cb_exc:
+                log.error("CIM callback raised: %s", cb_exc)
+        job.result_html = html
+        job.result_doc_id = doc_id
+        job.status = "complete"
+        job.add_event({
+            "step": 5, "label": "Complete",
+            "message": "CIM successfully generated.",
+            "status": "complete",
+            "html": html,
+            "doc_id": doc_id,
+            "errors": errors,
+        })
+        log.info("Pipeline complete — listing_id=%s doc_id=%s", job.listing_id, doc_id)
+    except Exception as exc:
+        log.error("Pipeline failed — listing_id=%s: %s", job.listing_id, exc)
+        job.status = "error"
+        job.add_event({"step": 0, "label": "Error", "message": str(exc), "status": "error"})
+    finally:
+        # Keep job in memory for 1 hour so reconnects can get the result
+        asyncio.create_task(_expire_job(job.listing_id, delay=3600))
+
+
+# ---------------------------------------------------------------------------
+# SSE fan-out generator — used by both initial and reconnecting connections
+# ---------------------------------------------------------------------------
+
+async def _fan_out_stream(job: CIMJob):
+    """
+    SSE generator: replays all past events then streams future ones.
+    Works for both the initial connection and any reconnecting browser.
+    Unsubscribes cleanly when the connection closes.
+    """
+    q = job.subscribe()
+    try:
+        while True:
+            try:
+                event = await asyncio.wait_for(q.get(), timeout=120)
+                yield _sse(event)
+                if event.get("status") in ("complete", "error"):
+                    break
+            except asyncio.TimeoutError:
+                yield ": heartbeat\n\n"   # keep the connection alive
+    finally:
+        job.unsubscribe(q)
+
+
+# ---------------------------------------------------------------------------
+# Endpoints
+# ---------------------------------------------------------------------------
+
+@app.get("/job/status/{listing_id}")
+async def job_status(listing_id: int):
+    """
+    Check whether a CIM generation job exists for this listing.
+    Called by the browser before starting a new generation — if a job is
+    already running or complete, the browser will reconnect instead of
+    starting from scratch.
+    """
+    job = _jobs.get(listing_id)
+    if not job:
+        return JSONResponse({"exists": False})
+    return JSONResponse({
+        "exists": True,
+        "job_id": job.job_id,
+        "status": job.status,          # "running" | "complete" | "error"
+        "steps_done": len(job.events_buffer),
+        "doc_id": job.result_doc_id,
+    })
 
 
 @app.post("/generate-cim/stream")
 async def generate_cim_stream(req: CIMRequest):
-    """Streams SSE progress events while running the real CIM pipeline."""
+    """
+    Streams SSE progress events while running the CIM pipeline.
 
-    async def event_stream():
-        def sse(payload: dict) -> str:
-            return f"data: {json.dumps(payload)}\n\n"
+    - If a job already exists for req.listing_id: reconnects (fan-out) to the
+      existing pipeline without restarting it.  All past events are replayed
+      immediately so the browser catches up.
+    - Otherwise: starts a new background pipeline task and streams its events.
+    """
+    listing_id = req.listing_id
 
-        yield sse({"step": 1, "label": "Downloading", "message": "Retrieving and cataloguing source documents...", "status": "in_progress"})
+    if listing_id and listing_id in _jobs:
+        job = _jobs[listing_id]
+        log.info("Reconnecting to existing job — listing_id=%s status=%s", listing_id, job.status)
+        return StreamingResponse(
+            _fan_out_stream(job),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
 
-        pipeline_task = asyncio.create_task(cim_graph.ainvoke(_build_initial_state(req)))
+    # New job
+    job_id = str(uuid.uuid4())
+    job = CIMJob(job_id=job_id, listing_id=listing_id, status="running")
+    if listing_id:
+        _jobs[listing_id] = job
+        log.info("New CIM job — listing_id=%s job_id=%s", listing_id, job_id)
 
-        progress_steps = [
-            (2, "Processing",  "Extracting and analysing content across all documents..."),
-            (3, "Generating",  "Synthesising findings and structuring the investment narrative..."),
-            (4, "Rendering",   "Composing the Confidential Information Memorandum..."),
-        ]
-        for step, label, msg in progress_steps:
-            await asyncio.sleep(50)
-            if pipeline_task.done():
-                break
-            yield sse({"step": step, "label": label, "message": msg, "status": "in_progress"})
-
-        try:
-            result = await pipeline_task
-            html = result.get("cim_output", "")
-            errors = [e.model_dump() for e in result.get("errors", [])]
-            listing_name = req.listing_data.get("Name") or req.listing_data.get("name", "Listing")
-            doc_id = None
-            if req.callback_url:
-                try:
-                    doc_id = await _do_callback(req.callback_url, html, listing_name, req.listing_id)
-                except Exception as cb_exc:
-                    log.error("CIM callback raised in stream: %s", cb_exc)
-            yield sse({"step": 5, "label": "Complete", "message": "CIM successfully generated.", "status": "complete", "html": html, "doc_id": doc_id, "errors": errors})
-        except Exception as exc:
-            log.error("Stream pipeline failed: %s", exc)
-            yield sse({"step": 0, "label": "Error", "message": str(exc), "status": "error"})
+    # Pipeline runs independently — survives browser disconnect
+    asyncio.create_task(_run_job_pipeline(req, job))
 
     return StreamingResponse(
-        event_stream(),
+        _fan_out_stream(job),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
