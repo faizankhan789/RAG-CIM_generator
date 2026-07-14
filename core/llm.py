@@ -15,7 +15,7 @@ from datetime import date
 
 log = logging.getLogger(__name__)
 
-MODEL = "claude-sonnet-4-6"
+MODEL = os.environ["CIM_MODEL"]  # set in .env or deployment env vars
 MAX_TOKENS = 8192
 MAX_HTML_TOKENS = 32000
 

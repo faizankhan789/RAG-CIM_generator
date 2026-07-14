@@ -30,6 +30,16 @@ def _guess_mime(path_str: str) -> str:
     return _DEFAULT_MIME
 
 
+def _detect_mime_from_bytes(image_bytes: bytes) -> str:
+    """Detect actual MIME type from image bytes via PIL — reliable for extensionless URLs."""
+    try:
+        from PIL import Image
+        fmt = Image.open(io.BytesIO(image_bytes)).format  # "JPEG", "PNG", "GIF", "WEBP"
+        return {"JPEG": "image/jpeg", "PNG": "image/png", "GIF": "image/gif", "WEBP": "image/webp"}.get(fmt or "", _DEFAULT_MIME)
+    except Exception:
+        return _DEFAULT_MIME
+
+
 def _to_png_bytes(raw_bytes: bytes) -> bytes:
     from PIL import Image
     img = Image.open(io.BytesIO(raw_bytes)).convert("RGB")
@@ -56,12 +66,11 @@ async def _load_image(item: FileItem) -> tuple[bytes, str]:
     """Returns (image_bytes, mime). Tries disk content first, falls back to URL download."""
     if item.content:
         try:
-            mime = _guess_mime(item.label)
             image_bytes = base64.standard_b64decode(item.content)
             if image_bytes:
                 valid, _ = _validate_image(image_bytes, item.label)
                 if valid:
-                    return image_bytes, mime
+                    return image_bytes, _detect_mime_from_bytes(image_bytes)
         except Exception:
             pass
         if item.url:
@@ -75,8 +84,7 @@ async def _load_image(item: FileItem) -> tuple[bytes, str]:
         # Gallery URLs sometimes return HTML redirect pages — reject fast
         if image_bytes[:100].lstrip().startswith((b"<", b"<!DOCTYPE", b"<!doctype")):
             raise ValueError("URL returned HTML, not an image")
-        mime = _guess_mime(str(path))
-        return image_bytes, mime
+        return image_bytes, _detect_mime_from_bytes(image_bytes)
 
 
 async def _process_one(item: FileItem, listing_xml: str = "") -> ExtractedContent:
