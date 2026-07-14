@@ -8,6 +8,7 @@ from pathlib import Path
 
 from core.downloader import download_to_temp
 from core.llm import extract_from_content
+from core.timing import FileTimer
 from models import ExtractionError, ExtractedContent, FileItem, FileType
 from state import CIMState
 
@@ -45,7 +46,6 @@ def _to_text(path: Path) -> str:
     if suffix == ".xls":
         return _xls_to_text(path)
 
-    # Try xlsx first, fall back to xls format (wrong extension is common)
     try:
         return _xlsx_to_text(path)
     except Exception:
@@ -54,36 +54,37 @@ def _to_text(path: Path) -> str:
         return _xls_to_text(path)
     except Exception:
         pass
-    # Last resort: treat as plain text / CSV
     return path.read_text(errors="replace")
 
 
 async def _process_one(item: FileItem, listing_xml: str = "") -> ExtractedContent:
+    label = item.label or item.url.split("/")[-1].split("?")[0]
     try:
-        if item.content:
-            import tempfile, base64 as _b64
-            suffix = "." + item.label.rsplit(".", 1)[-1].lower() if "." in item.label else ""
-            with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-                tmp.write(_b64.b64decode(item.content))
-                tmp_path = Path(tmp.name)
-            try:
-                raw_text = await asyncio.to_thread(_to_text, tmp_path)
-            finally:
-                tmp_path.unlink(missing_ok=True)
-        else:
-            async with download_to_temp(item.url) as path:
-                raw_text = await asyncio.to_thread(_to_text, path)
+        with FileTimer("spreadsheet", label):
+            if item.content:
+                import tempfile, base64 as _b64
+                suffix = "." + item.label.rsplit(".", 1)[-1].lower() if "." in item.label else ""
+                with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+                    tmp.write(_b64.b64decode(item.content))
+                    tmp_path = Path(tmp.name)
+                try:
+                    raw_text = await asyncio.to_thread(_to_text, tmp_path)
+                finally:
+                    tmp_path.unlink(missing_ok=True)
+            else:
+                async with download_to_temp(item.url) as path:
+                    raw_text = await asyncio.to_thread(_to_text, path)
 
-        content_blocks = [{"type": "text", "text": raw_text}]
-        text = await extract_from_content(content_blocks, item.url, listing_xml)
-        log.info("  Spreadsheet extracted: %r", item.label)
+            content_blocks = [{"type": "text", "text": raw_text}]
+            text = await extract_from_content(content_blocks, item.url, listing_xml)
+        log.debug("  Spreadsheet extracted: %r", label)
         return ExtractedContent(
             source_url=item.url,
             file_type=FileType.SPREADSHEET,
             metadata={"extracted_text": text},
         )
     except Exception as exc:
-        log.error("  Spreadsheet failed: %r — %s", item.label, exc)
+        log.error("  Spreadsheet failed: %r — %s", label, exc)
         return ExtractedContent(source_url=item.url, file_type=FileType.SPREADSHEET, error=str(exc))
 
 
@@ -92,7 +93,7 @@ async def spreadsheet_node(state: CIMState) -> dict:
     if not files:
         return {"extracted": [], "errors": []}
 
-    log.info("Spreadsheet: processing %d file(s)", len(files))
+    log.debug("Spreadsheet: processing %d file(s)", len(files))
     results = await asyncio.gather(*[_process_one(f, state.get("listing_xml", "")) for f in files])
 
     extracted = [r for r in results if not r.error]

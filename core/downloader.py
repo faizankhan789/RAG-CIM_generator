@@ -32,12 +32,13 @@ def _build_headers() -> dict[str, str]:
 
 
 @asynccontextmanager
-async def download_to_temp(url: str) -> AsyncIterator[Path]:
+async def download_to_temp(url: str, timeout: float = 120) -> AsyncIterator[Path]:
     """
     Stream-download *url* to a temporary file.
     Yields the Path; deletes on exit.
     Raises httpx.HTTPStatusError for non-2xx responses.
     Raises ValueError if file exceeds MAX_FILE_BYTES.
+    Pass a short timeout (e.g. 10s) for images to fail fast on 404/corrupt URLs.
     """
     headers = _build_headers()
     sem = _get_semaphore()
@@ -45,7 +46,7 @@ async def download_to_temp(url: str) -> AsyncIterator[Path]:
     async with sem:
         # verify=False handles self-signed/weak certs on local CRM installs;
         # in production replace with verify=True or a custom CA bundle
-        async with httpx.AsyncClient(follow_redirects=True, timeout=120, verify=False) as client:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=timeout, verify=False) as client:
             async with client.stream("GET", url, headers=headers) as resp:
                 resp.raise_for_status()
                 suffix = _suffix_from_response(url, resp)

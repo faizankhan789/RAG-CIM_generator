@@ -22,7 +22,7 @@ async def _fetch_logo(url: str) -> tuple[str, str]:
             resp.raise_for_status()
             mime = resp.headers.get("content-type", "image/png").split(";")[0].strip()
             b64 = base64.standard_b64encode(resp.content).decode()
-            log.info("Formatter: logo fetched (%s, %.1f KB)", mime, len(resp.content) / 1024)
+            log.debug("Formatter: logo fetched (%s, %.1f KB)", mime, len(resp.content) / 1024)
             return b64, mime
     except Exception as exc:
         log.error("Formatter: logo fetch failed — %s", exc)
@@ -70,7 +70,7 @@ def _extract_brand_colors(b64: str, mime: str) -> tuple[str, str]:
             else:
                 accent = tuple(max(0, c - 75) for c in primary)
 
-        log.info("Formatter: brand colors extracted — primary=%s accent=%s", to_hex(primary), to_hex(accent))
+        log.debug("Formatter: brand colors extracted — primary=%s accent=%s", to_hex(primary), to_hex(accent))
         return to_hex(primary), to_hex(accent)
     except Exception as exc:
         log.error("Formatter: brand color extraction failed — %s", exc)

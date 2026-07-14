@@ -25,6 +25,7 @@ log = logging.getLogger("cim_server")
 
 import asyncio
 import json
+import time
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, Optional
@@ -107,7 +108,7 @@ async def _expire_job(listing_id: int, delay: int = 3600) -> None:
     """Remove job from store after delay seconds (default 1 hour)."""
     await asyncio.sleep(delay)
     _jobs.pop(listing_id, None)
-    log.info("Job expired — listing_id=%s", listing_id)
+    log.debug("Job expired — listing_id=%s", listing_id)
 
 
 # ---------------------------------------------------------------------------
@@ -149,26 +150,26 @@ def _build_file_tree(req: CIMRequest) -> list[dict]:
 
 
 def _log_request_details(req: CIMRequest, listing_name: str, asking_price: str) -> None:
-    log.info("═══ CIM REQUEST ═══════════════════════════════")
-    log.info("  Listing name  : %s", listing_name or "(none)")
-    log.info("  Asking price  : %s", asking_price or "(none)")
-    log.info("  Logo URL      : %s", req.logo or "(none)")
+    log.debug("═══ CIM REQUEST ═══════════════════════════════")
+    log.debug("  Listing name  : %s", listing_name or "(none)")
+    log.debug("  Asking price  : %s", asking_price or "(none)")
+    log.debug("  Logo URL      : %s", req.logo or "(none)")
 
     if req.listing_data:
         skip = {"Name", "name", "Asking Price", "c_listing_askingprice_c"}
         fields = {k: v for k, v in req.listing_data.items() if k not in skip and v not in (None, "", [])}
-        log.info("  Listing data fields (%d):", len(req.listing_data))
+        log.debug("  Listing data fields (%d):", len(req.listing_data))
         for k, v in fields.items():
-            log.info("    %-30s: %s", k, str(v)[:120])
+            log.debug("    %-30s: %s", k, str(v)[:120])
 
-    log.info("  Listing files (%d):", len(req.listing_files))
+    log.debug("  Listing files (%d):", len(req.listing_files))
     for f in req.listing_files:
-        log.info("    [%s] %s", f.mimeType or "?", f.name)
+        log.debug("    [%s] %s", f.mimeType or "?", f.name)
 
-    log.info("  Gallery images (%d):", len(req.gallery_images))
+    log.debug("  Gallery images (%d):", len(req.gallery_images))
     for url in req.gallery_images:
-        log.info("    %s", url.split("?")[0])
-    log.info("═══════════════════════════════════════════════")
+        log.debug("    %s", url.split("?")[0])
+    log.debug("═══════════════════════════════════════════════")
 
 
 def _build_initial_state(req: CIMRequest) -> dict:
@@ -210,7 +211,8 @@ async def _run_job_pipeline(req: CIMRequest, job: CIMJob) -> None:
     Survives browser tab closure because it's an independent asyncio Task.
     """
     listing_name = req.listing_data.get("Name") or req.listing_data.get("name", "Listing")
-    log.info("Pipeline started — listing_id=%s name=%r", job.listing_id, listing_name)
+    t_pipeline_start = time.monotonic()
+    log.info("━━━ PIPELINE START  listing_id=%s  name=%r ━━━", job.listing_id, listing_name)
 
     job.add_event({
         "step": 1, "label": "Downloading",
@@ -241,6 +243,7 @@ async def _run_job_pipeline(req: CIMRequest, job: CIMJob) -> None:
                 doc_id = await _do_callback(req.callback_url, html, listing_name, req.listing_id)
             except Exception as cb_exc:
                 log.error("CIM callback raised: %s", cb_exc)
+        total_elapsed = time.monotonic() - t_pipeline_start
         job.result_html = html
         job.result_doc_id = doc_id
         job.status = "complete"
@@ -251,10 +254,15 @@ async def _run_job_pipeline(req: CIMRequest, job: CIMJob) -> None:
             "html": html,
             "doc_id": doc_id,
             "errors": errors,
+            "timing": {"total_seconds": round(total_elapsed, 2)},
         })
-        log.info("Pipeline complete — listing_id=%s doc_id=%s", job.listing_id, doc_id)
+        log.info(
+            "━━━ PIPELINE COMPLETE  listing_id=%s  doc_id=%s  total=%.2fs ━━━",
+            job.listing_id, doc_id, total_elapsed,
+        )
     except Exception as exc:
-        log.error("Pipeline failed — listing_id=%s: %s", job.listing_id, exc)
+        total_elapsed = time.monotonic() - t_pipeline_start
+        log.error("━━━ PIPELINE ERROR  listing_id=%s  elapsed=%.2fs  %s ━━━", job.listing_id, total_elapsed, exc)
         job.status = "error"
         job.add_event({"step": 0, "label": "Error", "message": str(exc), "status": "error"})
     finally:
@@ -350,10 +358,10 @@ async def generate_cim_stream(req: CIMRequest):
 
 async def _run_pipeline(req: CIMRequest) -> dict:
     listing_name = req.listing_data.get("Name") or req.listing_data.get("name", "")
-    log.info("CIM pipeline started — listing=%r", listing_name)
+    log.debug("CIM pipeline started — listing=%r", listing_name)
     try:
         result = await cim_graph.ainvoke(_build_initial_state(req))
-        log.info("CIM pipeline complete — listing=%r", listing_name)
+        log.debug("CIM pipeline complete — listing=%r", listing_name)
         return result
     except Exception as exc:
         log.error("CIM pipeline failed — listing=%r: %s", listing_name, exc)

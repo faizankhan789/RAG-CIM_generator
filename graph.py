@@ -27,6 +27,7 @@ from nodes.ppt import ppt_node
 from nodes.spreadsheet import spreadsheet_node
 from nodes.word import word_node
 from state import CIMState
+from core.timing import timed_node
 
 _PROCESSOR_NODES = ["pdf_node", "spreadsheet_node", "image_node", "ppt_node", "word_node"]
 
@@ -34,15 +35,15 @@ _PROCESSOR_NODES = ["pdf_node", "spreadsheet_node", "image_node", "ppt_node", "w
 def build_graph() -> StateGraph:
     builder = StateGraph(CIMState)
 
-    # Register all nodes
-    builder.add_node("ingest", ingest_node)
-    builder.add_node("pdf_node", pdf_node)
-    builder.add_node("spreadsheet_node", spreadsheet_node)
-    builder.add_node("image_node", image_node)
-    builder.add_node("ppt_node", ppt_node)
-    builder.add_node("word_node", word_node)
-    builder.add_node("aggregator", aggregator_node)
-    builder.add_node("formatter", formatter_node)
+    # Register all nodes — wrapped with timing
+    builder.add_node("ingest", timed_node(ingest_node))
+    builder.add_node("pdf_node", timed_node(pdf_node))
+    builder.add_node("spreadsheet_node", timed_node(spreadsheet_node))
+    builder.add_node("image_node", timed_node(image_node))
+    builder.add_node("ppt_node", timed_node(ppt_node))
+    builder.add_node("word_node", timed_node(word_node))
+    builder.add_node("aggregator", timed_node(aggregator_node))
+    builder.add_node("formatter", timed_node(formatter_node))
 
     # START → ingest
     builder.add_edge(START, "ingest")

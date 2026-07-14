@@ -10,6 +10,7 @@ import mimetypes
 
 from core.downloader import download_to_temp
 from core.llm import extract_from_content
+from core.timing import FileTimer
 from models import ExtractionError, ExtractedContent, FileItem, FileType
 from state import CIMState
 
@@ -63,40 +64,43 @@ async def _load_image(item: FileItem) -> tuple[bytes, str]:
                     return image_bytes, mime
         except Exception:
             pass
-        # content was corrupt — try URL fallback
         if item.url:
-            log.info("  Image: disk content corrupt for %r, trying URL download", item.label)
+            log.debug("  Image: disk content corrupt for %r, trying URL download", item.label)
 
     if not item.url:
         raise ValueError("no valid content and no URL")
 
-    async with download_to_temp(item.url) as path:
+    async with download_to_temp(item.url, timeout=10) as path:
         image_bytes = path.read_bytes()
+        # Gallery URLs sometimes return HTML redirect pages — reject fast
+        if image_bytes[:100].lstrip().startswith((b"<", b"<!DOCTYPE", b"<!doctype")):
+            raise ValueError("URL returned HTML, not an image")
         mime = _guess_mime(str(path))
         return image_bytes, mime
 
 
 async def _process_one(item: FileItem, listing_xml: str = "") -> ExtractedContent:
+    label = item.label or item.url.split("/")[-1].split("?")[0]
     try:
-        image_bytes, mime = await _load_image(item)
+        with FileTimer("image", label):
+            image_bytes, mime = await _load_image(item)
 
-        if mime == "image/png" and not item.label.lower().endswith(".png"):
-            image_bytes = await asyncio.to_thread(_to_png_bytes, image_bytes)
+            if mime == "image/png" and not item.label.lower().endswith(".png"):
+                image_bytes = await asyncio.to_thread(_to_png_bytes, image_bytes)
 
-        b64 = base64.standard_b64encode(image_bytes).decode("utf-8")
+            b64 = base64.standard_b64encode(image_bytes).decode("utf-8")
 
-        valid, reason = _validate_image(image_bytes, item.label)
-        if not valid:
-            log.error("  Image skipped: %r — %s", item.label, reason)
-            return ExtractedContent(source_url=item.url, file_type=FileType.IMAGE, error=f"skipped: {reason}")
+            valid, reason = _validate_image(image_bytes, label)
+            if not valid:
+                log.error("  Image skipped: %r — %s", label, reason)
+                return ExtractedContent(source_url=item.url, file_type=FileType.IMAGE, error=f"skipped: {reason}")
 
-        content_blocks = [
-            {"type": "image", "source": {"type": "base64", "media_type": mime, "data": b64}}
-        ]
-        text = await extract_from_content(content_blocks, item.url, listing_xml)
-        log.info("  Image extracted: %r", item.label)
+            content_blocks = [
+                {"type": "image", "source": {"type": "base64", "media_type": mime, "data": b64}}
+            ]
+            text = await extract_from_content(content_blocks, item.url, listing_xml)
 
-        label = item.label or item.url.split("/")[-1]
+        log.debug("  Image extracted: %r", label)
         return ExtractedContent(
             source_url=item.url,
             file_type=FileType.IMAGE,
@@ -108,7 +112,7 @@ async def _process_one(item: FileItem, listing_xml: str = "") -> ExtractedConten
             },
         )
     except Exception as exc:
-        log.error("  Image failed: %r — %s", item.label, exc)
+        log.error("  Image failed: %r — %s", label, exc)
         return ExtractedContent(source_url=item.url, file_type=FileType.IMAGE, error=str(exc))
 
 
@@ -117,7 +121,7 @@ async def image_node(state: CIMState) -> dict:
     if not files:
         return {"extracted": [], "errors": []}
 
-    log.info("Image: processing %d file(s)", len(files))
+    log.debug("Image: processing %d file(s)", len(files))
     results = await asyncio.gather(*[_process_one(f, state.get("listing_xml", "")) for f in files])
 
     extracted = [r for r in results if not r.error]

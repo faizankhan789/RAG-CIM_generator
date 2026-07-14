@@ -29,9 +29,9 @@ async def ingest_node(state: CIMState) -> dict:
     )
     for label, bucket in [("PDF", pdf), ("Sheet", sheets), ("Image", images), ("PPT", ppts), ("Word", words)]:
         for f in bucket:
-            log.info("  [%s] %s — %s", label, f.label or f.url.split("/")[-1].split("?")[0], f.url.split("?")[0])
+            log.debug("  [%s] %s — %s", label, f.label or f.url.split("/")[-1].split("?")[0], f.url.split("?")[0])
     for f in unknown:
-        log.info("  [SKIP] %s", f.url.split("?")[0])
+        log.debug("  [SKIP] %s", f.url.split("?")[0])
 
     return {
         "pdf_files": pdf,

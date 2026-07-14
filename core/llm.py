@@ -209,7 +209,7 @@ async def extract_from_content(
     user_content.extend(content_blocks)
     user_content.append({"type": "text", "text": _EXTRACTION_PROMPT})
     async with _get_llm_semaphore():
-        log.info("LLM extract: acquiring slot for %r", source_url)
+        log.debug("LLM extract: acquiring slot for %r", source_url)
         try:
             response = await client.messages.create(
                 model=MODEL,
@@ -674,7 +674,7 @@ async def generate_cim_html(
                 f"Do NOT use the industry fallback palette from STEP 2."
             ),
         })
-        log.info("LLM: brand colors injected — primary=%s accent=%s", brand_primary, brand_accent)
+        log.debug("LLM: brand colors injected — primary=%s accent=%s", brand_primary, brand_accent)
 
     logo_instruction = ""
     if logo_b64 and logo_mime:
