@@ -5,9 +5,12 @@ from __future__ import annotations
 import logging
 import sys
 
+import os
+
 from dotenv import load_dotenv
 
 load_dotenv()
+
 
 logging.basicConfig(
     level=logging.INFO,
