@@ -80,6 +80,7 @@ class CIMJob:
     events_buffer: list = field(default_factory=list)
     result_html: str = ""
     result_doc_id: Optional[int] = None
+    completed_at: Optional[float] = None  # monotonic time when job finished
     _waiters: list = field(default_factory=list)  # asyncio.Queue per live connection
 
     def add_event(self, event: dict) -> None:
@@ -250,6 +251,7 @@ async def _run_job_pipeline(req: CIMRequest, job: CIMJob) -> None:
         job.result_html = html
         job.result_doc_id = doc_id
         job.status = "complete"
+        job.completed_at = time.monotonic()
         job.add_event({
             "step": 5, "label": "Complete",
             "message": "CIM successfully generated.",
@@ -312,12 +314,14 @@ async def job_status(listing_id: int):
     job = _jobs.get(listing_id)
     if not job:
         return JSONResponse({"exists": False})
+    age_seconds = (time.monotonic() - job.completed_at) if job.completed_at is not None else None
     return JSONResponse({
         "exists": True,
         "job_id": job.job_id,
         "status": job.status,          # "running" | "complete" | "error"
         "steps_done": len(job.events_buffer),
         "doc_id": job.result_doc_id,
+        "age_seconds": age_seconds,    # seconds since completion, null if still running
     })
 
 
