@@ -320,7 +320,7 @@ PAGE 1 — COVER
 Full-page cover (min-height:1080px). Structure:
 - Background: diagonal or radial gradient from primary → mid (dark, rich)
 - Decorative geometric shapes: large semi-transparent circles or diagonal bands in accent color, low opacity (0.08–0.15), absolutely positioned — creates depth without clutter
-- Top bar: flex row, space-between. LEFT side: <!-- LOGO --> placeholder (if logo provided) OR empty. RIGHT side: "CONFIDENTIAL INFORMATION MEMORANDUM" in small-caps tracking-widest, accent color, text-align:right. Subtle top border in accent color across full width. This keeps the logo and CIM title on opposite sides with no overlap.
+- Top bar: MUST use `display:flex; justify-content:space-between; align-items:center; width:100%`. LEFT side (flex-start): <!-- LOGO --> placeholder (if logo provided) OR empty div. RIGHT side (flex-end): "CONFIDENTIAL INFORMATION MEMORANDUM" in small-caps tracking-widest, accent color, text-align:right. NEVER center either element — logo is strictly left, CIM title is strictly right. Subtle top border in accent color across full width.
 - CENTER BLOCK (vertically centered, text-align:center, align-items:center — ALL content MUST be centered horizontally):
     • Industry badge pill (e.g. "RESTAURANT & FOOD SERVICE") — accent background, white text, rounded-full, uppercase, letter-spacing, margin:0 auto
     • Business name: massive (clamp(3rem,8vw,6rem)), white, bold, line-height 1.1, max 2 lines, text-align:center
@@ -337,9 +337,10 @@ Full-page cover (min-height:1080px). Structure:
 PAGE 2 — TABLE OF CONTENTS
 ━━━━━━━━━━━━━━━━━━━━━━━━
 Clean, typographically elegant. Full-page feel (min-height:700px, light background).
-- Top: "TABLE OF CONTENTS" heading in primary color, large, bold
-- Thin accent-colored top border
-- Each section: flex row — Roman numeral (accent color, bold, monospace), section title (primary, medium weight), dotted leader line, page anchor arrow →
+- ALL content MUST be left-aligned (text-align:left, align-items:flex-start) — NEVER center the heading or entries.
+- Top: "TABLE OF CONTENTS" heading in primary color, large, bold, text-align:left
+- Thin accent-colored left border OR top border (not centered decoration)
+- Each section: flex row — Roman numeral (accent color, bold, monospace, min-width:3rem), section title (primary, medium weight), dotted leader line flex-grow, page anchor arrow → at right
 - Hover state: background tint, cursor pointer
 - Subtle section groupings if many sections
 
