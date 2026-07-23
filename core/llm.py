@@ -546,8 +546,8 @@ TECHNICAL REQUIREMENTS
 - Smooth scroll: html { scroll-behavior: smooth }
 - Financial numbers: font-variant-numeric: tabular-nums
 - Print media: @media print { .no-print { display:none } }
-- Page breaks (OUTSIDE @media print so PhantomJS applies them in screen mode): #cover { page-break-after: always } #toc { page-break-before: always; page-break-after: always } section { page-break-before: always } h1,h2,h3 { page-break-after: avoid } tr,li { page-break-inside: avoid }
-- @page { size: A4; margin: 0; } must be included in the <style> block
+- Page break rules to prevent awkward splits (add these OUTSIDE @media print): h1,h2,h3,h4 { page-break-after: avoid } table,figure,ul,ol { page-break-inside: avoid } tr { page-break-inside: avoid }
+- @page { size: A4; margin: 10mm; } must be in the <style> block
 - The document should feel HEAVY and SUBSTANTIAL — not lightweight. Use ample whitespace, large typography, rich backgrounds.
 
 Return ONLY the complete HTML document starting with <!DOCTYPE html>. No explanation, no markdown fences."""
