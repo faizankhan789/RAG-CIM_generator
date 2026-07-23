@@ -323,7 +323,7 @@ Full-page cover (min-height:1080px). Structure:
 - Top bar: MUST use `display:flex; justify-content:space-between; align-items:center; width:100%`. LEFT side (flex-start): <!-- LOGO --> placeholder (if logo provided) OR empty div. RIGHT side (flex-end): "CONFIDENTIAL INFORMATION MEMORANDUM" in small-caps tracking-widest, accent color, text-align:right. NEVER center either element — logo is strictly left, CIM title is strictly right. Subtle top border in accent color across full width.
 - CENTER BLOCK (vertically centered, text-align:center, align-items:center — ALL content MUST be centered horizontally):
     • Industry badge pill (e.g. "RESTAURANT & FOOD SERVICE") — accent background, white text, rounded-full, uppercase, letter-spacing, margin:0 auto
-    • Business name: massive (clamp(3rem,8vw,6rem)), white, bold, line-height 1.1, max 2 lines, text-align:center
+    • Business name: massive (4.5rem), white, bold, line-height 1.1, max 2 lines, text-align:center
     • Tasteful thin horizontal rule in accent color below name, width:80px, margin:0 auto
     • Tagline or location if available — light/60 color, italic, 1.2rem, text-align:center
     • Asking price block: large accent-colored chip — "Asking Price" label above, price value bold 2.5rem white, centered
@@ -331,7 +331,7 @@ Full-page cover (min-height:1080px). Structure:
     • Left: "Prepared exclusively for prospective acquirers" — muted italic
     • Center: current date
     • Right: "STRICTLY PRIVATE & CONFIDENTIAL"
-- If images are available AND contextually relevant (property, storefront, food, team — NOT random objects, dice, icons, or unrelated images): use <!-- IMG:1 --> as a CSS background on the cover div. NEVER place it as a <figure> or <img> above the top bar. Implementation: the cover div must have position:relative; overflow:hidden. Inside it, as the very first child, place: <div style="position:absolute;inset:0;z-index:0;"><img src="..." style="width:100%;height:100%;object-fit:cover;opacity:0.25;"/></div> followed by a <div style="position:absolute;inset:0;background:rgba(0,0,0,0.50);z-index:1;"></div>. All cover content (top bar, center block, bottom bar) at z-index:2. If the image is not contextually relevant (e.g. dice, generic clipart, icons), skip it entirely — use no image rather than a wrong one.
+- If images are available AND contextually relevant (property, storefront, food, team — NOT random objects, dice, icons, or unrelated images): use <!-- IMG:1 --> as a CSS background on the cover div. NEVER place it as a <figure> or <img> above the top bar. Implementation: the cover div must have position:relative; overflow:hidden. Inside it, as the very first child, place: <div style="position:absolute;top:0;right:0;bottom:0;left:0;z-index:0;"><img src="..." style="width:100%;height:100%;opacity:0.25;"/></div> followed by a <div style="position:absolute;top:0;right:0;bottom:0;left:0;background:rgba(0,0,0,0.50);z-index:1;"></div>. All cover content (top bar, center block, bottom bar) at z-index:2. If the image is not contextually relevant (e.g. dice, generic clipart, icons), skip it entirely — use no image rather than a wrong one.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━
 PAGE 2 — TABLE OF CONTENTS
@@ -536,6 +536,10 @@ TECHNICAL REQUIREMENTS
 ═══════════════════════════════════════════════
 - DO NOT add any sticky or fixed navigation bar, top bar, or header bar with section links — no nav element at all.
 - Fully self-contained HTML — ALL CSS inside one <style> tag. Zero external resources, CDN links, or web fonts.
+- NEVER use CSS custom properties / variables (no :root{} block, no var(--x)). Use hardcoded hex color values everywhere.
+- NEVER use clamp() — use fixed rem/px values for font-size and other properties.
+- NEVER use the inset shorthand — always use explicit top/right/bottom/left properties.
+- NEVER use object-fit — use width:100%;height:100%; with overflow:hidden on the parent instead.
 - Font stack: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif
 - Max content width: 1000px, centered with auto margins
 - The cover page and TOC use fixed-height pages — subsequent sections have generous padding (3rem+)
