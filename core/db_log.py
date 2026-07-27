@@ -19,16 +19,17 @@ _DB_CONFIG = {
     "user":     os.getenv("RAG_CIM_DB_USER", ""),
     "password": os.getenv("RAG_CIM_DB_PASS", ""),
     "database": os.getenv("RAG_CIM_DB_NAME", "rag_cim_db"),
-    "ssl":    {"ca": ""},   # DO requires SSL; empty ca = accept any cert
     "autocommit": True,
     "charset": "utf8mb4",
     "cursorclass": pymysql.cursors.DictCursor,
+    "connect_timeout": 10,
 }
 
 
 def _connect() -> pymysql.connections.Connection:
     cfg = dict(_DB_CONFIG)
-    return pymysql.connect(**cfg)
+    # DO managed DB requires SSL — use ssl_disabled=False with no cert verification
+    return pymysql.connect(**cfg, ssl_disabled=False)
 
 
 def _now() -> str:
