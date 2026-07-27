@@ -8,7 +8,6 @@ import io
 import logging
 import os
 import re
-from contextvars import ContextVar
 from typing import Any
 
 import anthropic
@@ -20,24 +19,23 @@ MODEL = os.environ["CIM_MODEL"]  # set in .env or deployment env vars
 MAX_TOKENS = 8192
 MAX_HTML_TOKENS = 32000
 
-# Per-request token accumulator — reset at pipeline start, read at end
-_token_input:  ContextVar[int] = ContextVar("token_input",  default=0)
-_token_output: ContextVar[int] = ContextVar("token_output", default=0)
+# Global token accumulator — shared across all tasks in the process.
+# reset_token_counters() called at pipeline start; get_token_counts() at end.
+_tokens: dict[str, int] = {"input": 0, "output": 0}
 
 
 def reset_token_counters() -> None:
-    _token_input.set(0)
-    _token_output.set(0)
+    _tokens["input"] = 0
+    _tokens["output"] = 0
 
 
 def get_token_counts() -> tuple[int, int]:
-    """Returns (input_tokens, output_tokens) accumulated so far."""
-    return _token_input.get(), _token_output.get()
+    return _tokens["input"], _tokens["output"]
 
 
 def _add_tokens(input_t: int, output_t: int) -> None:
-    _token_input.set(_token_input.get() + input_t)
-    _token_output.set(_token_output.get() + output_t)
+    _tokens["input"]  += input_t
+    _tokens["output"] += output_t
 
 # Max concurrent LLM extraction calls (env-tunable, default 5)
 _LLM_CONCURRENCY = int(os.getenv("LLM_CONCURRENCY", "5"))
