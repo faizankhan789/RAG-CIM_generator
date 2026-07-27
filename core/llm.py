@@ -8,6 +8,7 @@ import io
 import logging
 import os
 import re
+from contextvars import ContextVar
 from typing import Any
 
 import anthropic
@@ -18,6 +19,25 @@ log = logging.getLogger(__name__)
 MODEL = os.environ["CIM_MODEL"]  # set in .env or deployment env vars
 MAX_TOKENS = 8192
 MAX_HTML_TOKENS = 32000
+
+# Per-request token accumulator — reset at pipeline start, read at end
+_token_input:  ContextVar[int] = ContextVar("token_input",  default=0)
+_token_output: ContextVar[int] = ContextVar("token_output", default=0)
+
+
+def reset_token_counters() -> None:
+    _token_input.set(0)
+    _token_output.set(0)
+
+
+def get_token_counts() -> tuple[int, int]:
+    """Returns (input_tokens, output_tokens) accumulated so far."""
+    return _token_input.get(), _token_output.get()
+
+
+def _add_tokens(input_t: int, output_t: int) -> None:
+    _token_input.set(_token_input.get() + input_t)
+    _token_output.set(_token_output.get() + output_t)
 
 # Max concurrent LLM extraction calls (env-tunable, default 5)
 _LLM_CONCURRENCY = int(os.getenv("LLM_CONCURRENCY", "5"))
@@ -216,6 +236,7 @@ async def extract_from_content(
                 max_tokens=MAX_TOKENS,
                 messages=[{"role": "user", "content": user_content}],
             )
+            _add_tokens(response.usage.input_tokens, response.usage.output_tokens)
             return response.content[0].text.strip()
         except Exception as exc:
             log.error("Extraction failed (%s): %s", source_url, exc)
@@ -710,7 +731,9 @@ async def generate_cim_html(
             max_tokens=MAX_HTML_TOKENS,
             messages=[{"role": "user", "content": user_content}],
         ) as stream:
-            html = await stream.get_final_text()
+            final_msg = await stream.get_final_message()
+            html = final_msg.content[0].text
+            _add_tokens(final_msg.usage.input_tokens, final_msg.usage.output_tokens)
 
         html = html.strip()
 

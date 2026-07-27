@@ -32,6 +32,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, Optional
+from urllib.parse import urlparse
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -40,6 +41,8 @@ import uvicorn
 from pydantic import BaseModel
 
 from core.listing_context import build_listing_xml
+from core import db_log
+from core.llm import MODEL, reset_token_counters, get_token_counts
 from graph import cim_graph
 
 app = FastAPI(title="CIM Generator API")
@@ -65,6 +68,8 @@ class CIMRequest(BaseModel):
     listing_files: list[ListingFile] = []
     callback_url: str = ""   # PHP endpoint to POST finished HTML to
     listing_id: int = 0      # CRM listing ID — used to key the job
+    username: str = ""       # CRM username who triggered the request
+    crm_url: str = ""        # CRM instance URL (for multi-tenant tracking)
 
 
 # ---------------------------------------------------------------------------
@@ -218,6 +223,19 @@ async def _run_job_pipeline(req: CIMRequest, job: CIMJob) -> None:
     t_pipeline_start = time.monotonic()
     log.info("━━━ PIPELINE START  listing_id=%s  name=%r ━━━", job.listing_id, listing_name)
 
+    reset_token_counters()
+    # Derive crm_url from callback_url if not explicitly provided
+    crm_url = req.crm_url
+    if not crm_url and req.callback_url:
+        parsed = urlparse(req.callback_url)
+        crm_url = f"{parsed.scheme}://{parsed.netloc}"
+    db_row_id = await db_log.log_start(
+        username=req.username or "unknown",
+        crm_url=crm_url or "unknown",
+        listing_id=str(req.listing_id),
+        listing_name=listing_name,
+    )
+
     job.add_event({
         "step": 1, "label": "Downloading",
         "message": "Retrieving and cataloguing source documents...",
@@ -261,15 +279,20 @@ async def _run_job_pipeline(req: CIMRequest, job: CIMJob) -> None:
             "errors": errors,
             "timing": {"total_seconds": round(total_elapsed, 2)},
         })
+        in_tok, out_tok = get_token_counts()
+        if db_row_id:
+            await db_log.log_complete(db_row_id, MODEL, in_tok, out_tok)
         log.info(
-            "━━━ PIPELINE COMPLETE  listing_id=%s  doc_id=%s  total=%.2fs ━━━",
-            job.listing_id, doc_id, total_elapsed,
+            "━━━ PIPELINE COMPLETE  listing_id=%s  doc_id=%s  total=%.2fs  tokens=%d ━━━",
+            job.listing_id, doc_id, total_elapsed, in_tok + out_tok,
         )
     except Exception as exc:
         total_elapsed = time.monotonic() - t_pipeline_start
         log.error("━━━ PIPELINE ERROR  listing_id=%s  elapsed=%.2fs  %s ━━━", job.listing_id, total_elapsed, exc)
         job.status = "error"
         job.add_event({"step": 0, "label": "Error", "message": str(exc), "status": "error"})
+        if db_row_id:
+            await db_log.log_error(db_row_id)
     finally:
         # Keep job in memory for 1 hour so reconnects can get the result
         asyncio.create_task(_expire_job(job.listing_id, delay=3600))
