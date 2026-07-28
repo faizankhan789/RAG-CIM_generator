@@ -65,6 +65,18 @@ async def log_start(
     return await asyncio.get_event_loop().run_in_executor(None, _insert)
 
 
+_PRICE_PER_M_INPUT  = {"haiku": 0.80, "sonnet": 3.00, "opus": 15.00}
+_PRICE_PER_M_OUTPUT = {"haiku": 4.00, "sonnet": 15.00, "opus": 75.00}
+
+
+def _estimate_price(model: str, input_tokens: int, output_tokens: int) -> float:
+    m = model.lower()
+    tier = next((k for k in _PRICE_PER_M_INPUT if k in m), None)
+    in_rate  = _PRICE_PER_M_INPUT.get(tier, 1.00)
+    out_rate = _PRICE_PER_M_OUTPUT.get(tier, 5.00)
+    return round(input_tokens * in_rate / 1_000_000 + output_tokens * out_rate / 1_000_000, 8)
+
+
 async def log_complete(
     row_id: int,
     model: str,
@@ -74,6 +86,7 @@ async def log_complete(
     """UPDATE row on successful completion."""
     def _update():
         try:
+            price = _estimate_price(model, input_tokens, output_tokens)
             conn = _connect()
             with conn.cursor() as cur:
                 cur.execute(
@@ -81,11 +94,11 @@ async def log_complete(
                     UPDATE cim_generation_log
                     SET status='completed', completed_at=%s,
                         model=%s, input_tokens=%s, output_tokens=%s,
-                        total_tokens=%s
+                        total_tokens=%s, estimated_price=%s
                     WHERE id=%s
                     """,
                     (_now(), model, input_tokens, output_tokens,
-                     input_tokens + output_tokens, row_id),
+                     input_tokens + output_tokens, price, row_id),
                 )
             conn.close()
         except Exception as exc:
