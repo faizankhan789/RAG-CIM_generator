@@ -36,14 +36,17 @@ from urllib.parse import urlparse
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse, HTMLResponse
 import uvicorn
 from pydantic import BaseModel
 
 from core.listing_context import build_listing_xml
 from core import db_log
 from core.llm import MODEL, reset_token_counters, get_token_counts
+from core.templates import TEMPLATES
 from graph import cim_graph
+
+_PREVIEWS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "previews")
 
 app = FastAPI(title="CIM Generator API")
 
@@ -70,6 +73,7 @@ class CIMRequest(BaseModel):
     listing_id: int = 0      # CRM listing ID — used to key the job
     username: str = ""       # CRM username who triggered the request
     crm_url: str = ""        # CRM instance URL (for multi-tenant tracking)
+    template_id: str = "classic"  # Selected design template (see core/templates.py)
 
 
 # ---------------------------------------------------------------------------
@@ -192,6 +196,7 @@ def _build_initial_state(req: CIMRequest) -> dict:
         "listing_name": listing_name,
         "asking_price": asking_price,
         "logo_url": req.logo or "",
+        "template_id": req.template_id or "classic",
         "pdf_files": [],
         "spreadsheet_files": [],
         "image_files": [],
@@ -416,6 +421,19 @@ async def generate_cim_json(req: CIMRequest):
     html = final_state.get("cim_output", "")
     errors = [e.model_dump() for e in final_state.get("errors", [])]
     return JSONResponse(content={"html": html, "errors": errors})
+
+
+@app.get("/template-preview/{template_id}")
+async def template_preview(template_id: str):
+    """Serve a pre-generated demo CIM HTML for a design template (see scripts/generate_template_previews.py)."""
+    if template_id not in TEMPLATES:
+        raise HTTPException(status_code=404, detail="Unknown template_id")
+    path = os.path.join(_PREVIEWS_DIR, f"{template_id}.html")
+    if not os.path.isfile(path):
+        raise HTTPException(status_code=404, detail="Preview not generated yet")
+    with open(path, "r") as f:
+        html = f.read()
+    return HTMLResponse(content=html)
 
 
 @app.get("/health")

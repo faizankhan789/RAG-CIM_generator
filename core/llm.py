@@ -13,6 +13,8 @@ from typing import Any
 import anthropic
 from datetime import date
 
+from core.templates import get_template
+
 log = logging.getLogger(__name__)
 
 MODEL = os.environ["CIM_MODEL"]  # set in .env or deployment env vars
@@ -344,7 +346,7 @@ Full-page cover (min-height:1080px). Structure:
     • Industry badge pill (e.g. "RESTAURANT & FOOD SERVICE") — accent background, white text, rounded-full, uppercase, letter-spacing, margin:0 auto
     • Business name: massive (4.5rem), white, bold, line-height 1.1, max 2 lines, text-align:center
     • Tasteful thin horizontal rule in accent color below name, width:80px, margin:0 auto
-    • Tagline or location if available — light/60 color, italic, 1.2rem, text-align:center
+    • Tagline or location if available — rgba(255,255,255,0.85) (NEVER lower opacity — must stay clearly readable against the dark cover background), italic, 1.2rem, text-align:center
     • Asking price block: large accent-colored chip — "Asking Price" label above, price value bold 2.5rem white, centered
 - BOTTOM BAR: dark translucent band across full width:
     • Left: "Prepared exclusively for prospective acquirers" — muted italic
@@ -497,7 +499,7 @@ SECTION HEADER:
 - Full-width band: gradient from primary to mid, padding 2.5rem 3rem
 - Roman numeral (accent, 0.85rem, letter-spacing) above title
 - Section title: white, 2rem, bold
-- Optional 1-line description: white/70, italic, 0.95rem
+- Optional 1-line description: rgba(255,255,255,0.85) (NEVER lower opacity), italic, 0.95rem
 - Decorative right-side accent bar or geometric element
 
 SECTION BODY (white or light background, generous padding):
@@ -547,8 +549,9 @@ LAST PAGE — DISCLAIMER
 ━━━━━━━━━━━━━━━━━━━━━━━━
 Dark footer page (primary bg):
 - "IMPORTANT NOTICE & DISCLAIMER" in accent, centered
-- Boilerplate confidentiality text in white/60, small, centered
+- Boilerplate confidentiality text: rgba(255,255,255,0.85) — NEVER lower opacity than this, and NEVER a color close in hue/brightness to the background. This text must be plainly, easily readable at a glance, not a subtle/washed-out watermark.
 - Centered accent horizontal rule
+- CRITICAL: you MUST set this color with a selector that directly targets the <p> tags themselves, e.g. `.disclaimer-text p { color: rgba(255,255,255,0.85); }` — do NOT rely on inheriting color from a parent wrapper. Your global `p { color: ... }` rule (used for light-background body text elsewhere) directly targets every `<p>` element and WILL silently override an inherited color on this dark page, making the text invisible. A directly-matched element selector always wins over an inherited value, regardless of the ancestor's specificity.
 
 ═══════════════════════════════════════════════
 TECHNICAL REQUIREMENTS
@@ -568,6 +571,9 @@ TECHNICAL REQUIREMENTS
 - Page break rules to prevent awkward splits (add these OUTSIDE @media print): h1,h2,h3,h4 { page-break-after: avoid } table,figure,ul,ol { page-break-inside: avoid } tr { page-break-inside: avoid }
 - @page { size: A4; margin: 10mm; } must be in the <style> block
 - The document should feel HEAVY and SUBSTANTIAL — not lightweight. Use ample whitespace, large typography, rich backgrounds.
+- Custom bullet markers: if a ul/li uses a ::before for a styled bullet/dot, you MUST also set list-style:none on that ul/li — otherwise the browser's default bullet renders alongside it, producing a duplicated "• •" marker.
+- TEXT CONTRAST (applies everywhere, every template): any text on a colored or dark background must maintain at least a 4.5:1 contrast ratio and must be immediately, plainly readable — never a low-opacity "watermark" effect. On dark backgrounds, text opacity must never go below 0.85 (e.g. rgba(255,255,255,0.85), not 0.6 or 0.7). Never set a text color whose hue/brightness is close to its background — if in doubt, use a plain solid light color (near-white or the palette's accent) rather than a translucent one.
+- CSS SPECIFICITY TRAP (a common cause of invisible text — check this every time you write a dark-background block): if you have a global element selector like `p { color: #1a1a1a; }` or `li { color: ... }` for the document's default light-background body text, that rule directly targets every matching tag and OVERRIDES any color merely inherited from a dark-background ancestor (e.g. `.disclaimer-page { color: white; }` does NOT make its `<p>` children white if a global `p { color: #1a1a1a }` rule exists — the direct match always wins over inheritance). Whenever you place text inside a dark/colored block, you MUST set that block's text color with a selector that directly targets the actual text tags (e.g. `.disclaimer-text p { color: ... }`, not just `.disclaimer-text { color: ... }`) — never assume inheritance will apply.
 
 Return ONLY the complete HTML document starting with <!DOCTYPE html>. No explanation, no markdown fences."""
 
@@ -591,6 +597,55 @@ def _is_valid_image(b64: str, mime: str, label: str) -> bool:
     except Exception as exc:
         log.error("HTML gen: dropping image %r — %s", label, exc)
         return False
+
+
+def _build_template_directive(template: dict) -> str:
+    """Build a prompt override block for a non-default design template. Empty for 'classic'."""
+    if not template.get("palette"):
+        return ""
+
+    p = template["palette"]
+    f = template["fonts"]
+    headings = template.get("headings") or {}
+    heading_lines = "\n".join(f'- "{old}" → "{new}"' for old, new in headings.items())
+    cover_override = template.get("cover_override") or ""
+    section_header_override = template.get("section_header_override") or ""
+
+    return f"""\
+
+═══════════════════════════════════════════════
+MANDATORY TEMPLATE OVERRIDE — "{template['name']}"
+═══════════════════════════════════════════════
+The user explicitly selected this design template. EVERYTHING in this block wins over
+any conflicting instruction earlier in this prompt — including STEP 2's industry
+fallback palette, the generic font stack in TECHNICAL REQUIREMENTS, and the default
+"PAGE 1 — COVER" / "SECTION HEADER" specs. This is not a color-only change: the cover
+page and section headers must be STRUCTURALLY different from the default layout, not
+just recolored. Ignore any brand-color instructions above — use ONLY the values below.
+
+COLOR PALETTE (use exactly these hex values everywhere primary/accent/light/mid are used):
+- primary: {p['primary']}
+- accent:  {p['accent']}
+- light:   {p['light']}
+- mid:     {p['mid']}
+
+FONT STACK (replace the 'Segoe UI' stack from TECHNICAL REQUIREMENTS with these):
+- Headings (h1, h2, h3, section titles, cover business name): {f['heading']}
+- Body text (paragraphs, lists, table cells): {f['body']}
+
+LAYOUT & STYLE DIRECTION (apply throughout the document):
+{template['layout_notes']}
+
+COVER PAGE OVERRIDE (mandatory — do not fall back to the default centered cover spec):
+{cover_override}
+
+SECTION HEADER OVERRIDE (mandatory — apply to every section's header band, not just the cover):
+{section_header_override}
+
+SECTION HEADING LABELS — rename ONLY the displayed title text, keep the same order,
+same Roman numeral, and same underlying content/subtopics:
+{heading_lines}
+"""
 
 
 def _build_image_tag(img: dict, index: int) -> str:
@@ -617,10 +672,12 @@ async def generate_cim_html(
     logo_mime: str = "",
     brand_primary: str = "",
     brand_accent: str = "",
+    template_id: str = "classic",
 ) -> str:
     """Send all per-file findings + listing context + images to Claude → returns full HTML CIM."""
     client = get_client()
     all_images = all_images or []
+    template = get_template(template_id)
 
     user_content: list[dict] = []
 
@@ -686,7 +743,7 @@ async def generate_cim_html(
                 "text": f"(Above image is Image {seq_i}: \"{label}\". Use marker <!-- IMG:{seq_i} --> to embed it.)",
             })
 
-    if brand_primary and brand_accent:
+    if brand_primary and brand_accent and template["allow_brand_override"]:
         user_content.append({
             "type": "text",
             "text": (
@@ -719,7 +776,11 @@ async def generate_cim_html(
 
     user_content.append({
         "type": "text",
-        "text": f"Today's date is {date.today().strftime('%B %d, %Y')}.\n\n" + _HTML_PROMPT,
+        "text": (
+            f"Today's date is {date.today().strftime('%B %d, %Y')}.\n\n"
+            + _HTML_PROMPT
+            + _build_template_directive(template)
+        ),
     })
 
     try:
@@ -735,10 +796,22 @@ async def generate_cim_html(
 
         html = html.strip()
 
-        # Strip accidental markdown fencing
+        # Strip any preamble chatter and/or markdown fencing Claude adds before the
+        # actual document (e.g. "I'll create a premium CIM...\n```html\n<!DOCTYPE...").
+        # Anchor on the real document boundaries rather than assuming the response
+        # starts with a fence — the model doesn't always obey "no explanation".
+        doctype_match = re.search(r"<!DOCTYPE\s+html", html, re.IGNORECASE)
+        if doctype_match:
+            html = html[doctype_match.start():]
+        html_end_match = re.search(r"</html\s*>", html, re.IGNORECASE)
+        if html_end_match:
+            html = html[:html_end_match.end()]
+        html = html.strip()
         if html.startswith("```"):
             lines = html.split("\n")
             html = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
+        if html.endswith("```"):
+            html = html.rsplit("```", 1)[0].strip()
 
         # Replace <!-- LOGO --> marker with actual img tag (Claude places it in cover top-bar left)
         if logo_b64 and logo_mime:

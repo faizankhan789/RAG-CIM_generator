@@ -1,0 +1,2097 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Anchor & Vine Hospitality Group - Confidential Information Memorandum</title>
+    <style>
+        @page {
+            size: A4;
+            margin: 10mm;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html {
+            scroll-behavior: smooth;
+            font-variant-numeric: tabular-nums;
+        }
+
+        body {
+            font-family: Palatino, 'Palatino Linotype', Georgia, serif;
+            line-height: 1.6;
+            color: #2a2118;
+            background: #f5f0e6;
+        }
+
+        h1, h2, h3, h4, h5, h6 {
+            font-family: 'Bodoni MT', Didot, Georgia, serif;
+            page-break-after: avoid;
+        }
+
+        h1 { font-size: 2.5rem; font-weight: 400; letter-spacing: 0.05em; }
+        h2 { font-size: 2rem; font-weight: 400; letter-spacing: 0.04em; }
+        h3 { font-size: 1.5rem; font-weight: 400; letter-spacing: 0.03em; }
+
+        table, figure, ul, ol {
+            page-break-inside: avoid;
+        }
+
+        tr {
+            page-break-inside: avoid;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: white;
+        }
+
+        /* COVER PAGE */
+        #cover {
+            position: relative;
+            overflow: hidden;
+            min-height: 1080px;
+            background: linear-gradient(135deg, #0d0d0d 0%, #2a2118 100%);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            color: white;
+            padding: 3rem;
+            page-break-after: always;
+        }
+
+        #cover::before {
+            content: '';
+            position: absolute;
+            top: 24px;
+            left: 24px;
+            right: 24px;
+            bottom: 24px;
+            border: 2px double #b8974a;
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        #cover::after {
+            content: '';
+            position: absolute;
+            top: 24px;
+            left: 24px;
+            width: 24px;
+            height: 24px;
+            border-top: 2px solid #b8974a;
+            border-left: 2px solid #b8974a;
+            z-index: 1;
+        }
+
+        .cover-corner {
+            position: absolute;
+            width: 24px;
+            height: 24px;
+            border: 2px solid #b8974a;
+            z-index: 1;
+        }
+
+        .cover-corner.top-right {
+            top: 24px;
+            right: 24px;
+            border-top: 2px solid #b8974a;
+            border-right: 2px solid #b8974a;
+            border-bottom: none;
+            border-left: none;
+        }
+
+        .cover-corner.bottom-left {
+            bottom: 24px;
+            left: 24px;
+            border-bottom: 2px solid #b8974a;
+            border-left: 2px solid #b8974a;
+            border-top: none;
+            border-right: none;
+        }
+
+        .cover-corner.bottom-right {
+            bottom: 24px;
+            right: 24px;
+            border-bottom: 2px solid #b8974a;
+            border-right: 2px solid #b8974a;
+            border-top: none;
+            border-left: none;
+        }
+
+        .cover-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 2;
+            position: relative;
+        }
+
+        .cover-top-right {
+            text-align: right;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            color: rgba(255, 255, 255, 0.85);
+        }
+
+        .cover-center {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            z-index: 2;
+            position: relative;
+            gap: 1.5rem;
+        }
+
+        .cover-badge {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.2em;
+            color: #b8974a;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 1rem;
+        }
+
+        .cover-badge::before,
+        .cover-badge::after {
+            content: '';
+            flex-grow: 1;
+            height: 1px;
+            background: #b8974a;
+            max-width: 60px;
+        }
+
+        .cover-business-name {
+            font-size: 3.5rem;
+            font-weight: 400;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: #d4b896;
+            line-height: 1.2;
+            margin: 0;
+        }
+
+        .cover-divider {
+            width: 60px;
+            height: 1px;
+            background: #b8974a;
+            margin: 0 auto;
+        }
+
+        .cover-tagline {
+            font-size: 1.15rem;
+            font-style: italic;
+            color: rgba(255, 255, 255, 0.85);
+            max-width: 600px;
+        }
+
+        .cover-price-label {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.2em;
+            color: rgba(255, 255, 255, 0.7);
+            margin-bottom: 0.5rem;
+        }
+
+        .cover-price-container {
+            text-align: center;
+        }
+
+        .cover-price-rule-top {
+            width: 100px;
+            height: 1px;
+            background: #b8974a;
+            margin: 0 auto 1rem;
+        }
+
+        .cover-price-value {
+            font-size: 2.5rem;
+            font-weight: 400;
+            color: white;
+            margin: 0;
+            font-family: 'Bodoni MT', Didot, Georgia, serif;
+            letter-spacing: 0.05em;
+        }
+
+        .cover-price-rule-bottom {
+            width: 100px;
+            height: 1px;
+            background: #b8974a;
+            margin: 1rem auto 0;
+        }
+
+        .cover-bottom {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.8rem;
+            color: rgba(255, 255, 255, 0.85);
+            z-index: 2;
+            position: relative;
+            padding-top: 2rem;
+            border-top: 1px solid rgba(181, 151, 106, 0.3);
+        }
+
+        .cover-bottom-left {
+            font-style: italic;
+        }
+
+        .cover-bottom-center {
+            font-size: 0.75rem;
+        }
+
+        .cover-bottom-right {
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            font-weight: 500;
+        }
+
+        /* TABLE OF CONTENTS */
+        #toc {
+            min-height: 700px;
+            background: #f5f0e6;
+            padding: 4rem 3rem;
+            page-break-after: always;
+        }
+
+        .toc-title {
+            font-size: 2.2rem;
+            color: #0d0d0d;
+            margin-bottom: 3rem;
+            text-align: left;
+            border-left: 3px solid #b8974a;
+            padding-left: 1.5rem;
+        }
+
+        .toc-entry {
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+            padding: 0.8rem 0;
+            border-bottom: 1px solid #e5dcc8;
+            transition: background 0.3s;
+        }
+
+        .toc-entry:last-child {
+            border-bottom: none;
+        }
+
+        .toc-entry:hover {
+            background: rgba(184, 151, 74, 0.05);
+        }
+
+        .toc-numeral {
+            font-family: 'Bodoni MT', Didot, Georgia, serif;
+            font-size: 0.95rem;
+            color: #b8974a;
+            font-weight: bold;
+            min-width: 2.5rem;
+            text-align: right;
+        }
+
+        .toc-title-text {
+            flex-grow: 1;
+            color: #0d0d0d;
+            font-size: 1rem;
+        }
+
+        .toc-leader {
+            flex-grow: 1;
+            border-bottom: 1px dotted #b8974a;
+            margin: 0 0.5rem;
+            height: 0;
+        }
+
+        .toc-arrow {
+            color: #b8974a;
+            font-size: 0.9rem;
+        }
+
+        /* KEY METRICS STRIP */
+        #metrics-strip {
+            background: #0d0d0d;
+            display: flex;
+            justify-content: space-around;
+            padding: 2.5rem 3rem;
+            page-break-after: always;
+            gap: 1px;
+            flex-wrap: wrap;
+        }
+
+        .metric-card {
+            flex: 1;
+            min-width: 150px;
+            text-align: center;
+            padding: 2rem 1.5rem;
+            color: white;
+            border-right: 1px solid rgba(184, 151, 74, 0.3);
+        }
+
+        .metric-card:last-child {
+            border-right: none;
+        }
+
+        .metric-label {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            color: rgba(255, 255, 255, 0.7);
+            margin-bottom: 0.8rem;
+        }
+
+        .metric-value {
+            font-size: 2rem;
+            font-weight: 400;
+            font-family: 'Bodoni MT', Didot, Georgia, serif;
+            color: white;
+            line-height: 1.1;
+        }
+
+        .metric-unit {
+            font-size: 0.8rem;
+            color: rgba(255, 255, 255, 0.6);
+            margin-top: 0.3rem;
+        }
+
+        /* SECTIONS */
+        section {
+            page-break-after: always;
+        }
+
+        .section-header {
+            background: linear-gradient(90deg, #0d0d0d 0%, #2a2118 100%);
+            padding: 3rem 3rem;
+            text-align: center;
+            color: white;
+            position: relative;
+        }
+
+        .section-numeral {
+            font-family: 'Bodoni MT', Didot, Georgia, serif;
+            font-size: 0.85rem;
+            letter-spacing: 0.2em;
+            color: #b8974a;
+            text-transform: uppercase;
+            margin-bottom: 0.5rem;
+        }
+
+        .section-title {
+            font-size: 2.2rem;
+            font-weight: 400;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: white;
+            margin: 1rem 0;
+            font-family: 'Bodoni MT', Didot, Georgia, serif;
+        }
+
+        .section-rule-top {
+            width: 80px;
+            height: 1px;
+            background: #b8974a;
+            margin: 0 auto 1rem;
+        }
+
+        .section-rule-bottom {
+            width: 80px;
+            height: 1px;
+            background: #b8974a;
+            margin: 1rem auto 0;
+        }
+
+        .section-description {
+            font-size: 0.95rem;
+            color: rgba(255, 255, 255, 0.85);
+            font-style: italic;
+            margin-top: 1rem;
+        }
+
+        .section-body {
+            background: white;
+            padding: 4rem 3rem;
+            color: #2a2118;
+        }
+
+        .section-body h3 {
+            margin-top: 3rem;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid #e5dcc8;
+        }
+
+        .section-body h3:first-child {
+            margin-top: 0;
+        }
+
+        /* NARRATIVE PULL QUOTE */
+        .narrative-pull {
+            border-left: 4px solid #b8974a;
+            padding-left: 2rem;
+            margin: 2rem 0;
+            font-size: 1.15rem;
+            line-height: 1.8;
+            color: #0d0d0d;
+        }
+
+        /* TWO-COLUMN LAYOUT */
+        .two-col-60-40 {
+            display: flex;
+            gap: 2rem;
+            align-items: flex-start;
+            margin: 2rem 0;
+        }
+
+        .two-col-60 {
+            flex: 0 0 60%;
+        }
+
+        .two-col-40 {
+            flex: 0 0 40%;
+            background: rgba(184, 151, 74, 0.08);
+            padding: 2rem;
+            border-radius: 2px;
+        }
+
+        .two-col-40 h4 {
+            font-size: 1.1rem;
+            margin-bottom: 1rem;
+            color: #0d0d0d;
+        }
+
+        .two-col-40 ul {
+            list-style: none;
+            padding: 0;
+        }
+
+        .two-col-40 li {
+            padding-left: 1.5rem;
+            margin-bottom: 0.8rem;
+            position: relative;
+            color: #2a2118;
+        }
+
+        .two-col-40 li::before {
+            content: '•';
+            position: absolute;
+            left: 0;
+            color: #b8974a;
+            font-weight: bold;
+        }
+
+        /* BULLET LISTS */
+        .bullet-list {
+            list-style: none;
+            padding: 0;
+            margin: 1.5rem 0;
+        }
+
+        .bullet-list li {
+            padding-left: 2rem;
+            margin-bottom: 1rem;
+            position: relative;
+            color: #2a2118;
+        }
+
+        .bullet-list li::before {
+            content: '◆';
+            position: absolute;
+            left: 0;
+            color: #b8974a;
+            font-size: 0.7rem;
+            line-height: 1.8;
+        }
+
+        /* FINANCIAL TABLE */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 2rem 0;
+            background: white;
+        }
+
+        thead {
+            background: #0d0d0d;
+            color: white;
+        }
+
+        th {
+            padding: 1.2rem;
+            text-align: left;
+            font-family: 'Bodoni MT', Didot, Georgia, serif;
+            font-size: 0.95rem;
+            font-weight: 400;
+            letter-spacing: 0.05em;
+            border-bottom: 1px solid #b8974a;
+        }
+
+        th.numeric {
+            text-align: right;
+        }
+
+        td {
+            padding: 1rem 1.2rem;
+            border-bottom: 1px solid #e5dcc8;
+        }
+
+        tbody tr:nth-child(even) {
+            background: #f5f0e6;
+        }
+
+        td.numeric {
+            text-align: right;
+            font-family: monospace;
+            color: #0d0d0d;
+        }
+
+        td.currency {
+            color: #555;
+            font-size: 0.9rem;
+        }
+
+        tr.summary {
+            background: rgba(184, 151, 74, 0.1) !important;
+            font-weight: 500;
+        }
+
+        /* CARD GRID */
+        .card-grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+            margin: 2rem 0;
+        }
+
+        .card-grid-3 {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 2rem;
+            margin: 2rem 0;
+        }
+
+        .card {
+            background: white;
+            border: 1px solid #e5dcc8;
+            border-radius: 2px;
+            padding: 2rem;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+        }
+
+        .card h4 {
+            font-size: 1.1rem;
+            color: #0d0d0d;
+            margin-bottom: 0.5rem;
+        }
+
+        .card .title-accent {
+            font-size: 0.85rem;
+            color: #b8974a;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            display: block;
+            margin-bottom: 0.5rem;
+        }
+
+        .card p {
+            color: #555;
+            font-size: 0.95rem;
+            line-height: 1.6;
+        }
+
+        /* SWOT GRID */
+        .swot-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+            margin: 2rem 0;
+        }
+
+        .swot-quadrant {
+            border-top: 3px solid;
+            padding: 2rem;
+            background: #f5f0e6;
+            border-radius: 2px;
+        }
+
+        .swot-strengths { border-top-color: #16a34a; }
+        .swot-weaknesses { border-top-color: #dc2626; }
+        .swot-opportunities { border-top-color: #2563eb; }
+        .swot-threats { border-top-color: #d97706; }
+
+        .swot-title {
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            font-weight: 600;
+            margin-bottom: 1.5rem;
+        }
+
+        .swot-strengths .swot-title { color: #16a34a; }
+        .swot-weaknesses .swot-title { color: #dc2626; }
+        .swot-opportunities .swot-title { color: #2563eb; }
+        .swot-threats .swot-title { color: #d97706; }
+
+        .swot-list {
+            list-style: none;
+            padding: 0;
+        }
+
+        .swot-list li {
+            padding-left: 1.5rem;
+            margin-bottom: 0.8rem;
+            position: relative;
+            color: #2a2118;
+            font-size: 0.95rem;
+        }
+
+        .swot-list li::before {
+            content: '→';
+            position: absolute;
+            left: 0;
+            color: #b8974a;
+        }
+
+        /* TIMELINE */
+        .timeline {
+            margin: 2rem 0;
+        }
+
+        .timeline-item {
+            display: flex;
+            margin-bottom: 2.5rem;
+            position: relative;
+        }
+
+        .timeline-item:not(:last-child)::after {
+            content: '';
+            position: absolute;
+            left: 25px;
+            top: 60px;
+            width: 2px;
+            height: calc(100% + 20px);
+            background: rgba(184, 151, 74, 0.3);
+        }
+
+        .timeline-number {
+            width: 50px;
+            height: 50px;
+            background: #b8974a;
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-family: 'Bodoni MT', Didot, Georgia, serif;
+            font-size: 1.3rem;
+            margin-right: 1.5rem;
+            flex-shrink: 0;
+            position: relative;
+            z-index: 1;
+        }
+
+        .timeline-content h4 {
+            font-size: 1.1rem;
+            margin-bottom: 0.5rem;
+            color: #0d0d0d;
+        }
+
+        .timeline-content p {
+            color: #555;
+            font-size: 0.95rem;
+            line-height: 1.6;
+        }
+
+        /* STAT STRIP */
+        .stat-strip {
+            background: #0d0d0d;
+            color: white;
+            padding: 2.5rem 3rem;
+            display: flex;
+            justify-content: space-around;
+            gap: 2rem;
+            margin: 2rem 0;
+            border-radius: 2px;
+            flex-wrap: wrap;
+        }
+
+        .stat-item {
+            flex: 1;
+            min-width: 150px;
+            text-align: center;
+        }
+
+        .stat-label {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            color: rgba(255, 255, 255, 0.7);
+            margin-bottom: 0.8rem;
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-family: 'Bodoni MT', Didot, Georgia, serif;
+            font-weight: 400;
+            color: #b8974a;
+            line-height: 1;
+        }
+
+        /* DISCLAIMER */
+        #disclaimer {
+            background: #0d0d0d;
+            color: rgba(255, 255, 255, 0.85);
+            padding: 4rem 3rem;
+            text-align: center;
+            min-height: 600px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            page-break-after: avoid;
+        }
+
+        .disclaimer-title {
+            font-size: 1.8rem;
+            color: #b8974a;
+            margin-bottom: 2rem;
+            font-family: 'Bodoni MT', Didot, Georgia, serif;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+        }
+
+        .disclaimer-rule {
+            width: 100px;
+            height: 1px;
+            background: #b8974a;
+            margin: 0 auto 2rem;
+        }
+
+        .disclaimer-text {
+            max-width: 800px;
+            margin: 0 auto;
+            font-size: 0.9rem;
+            line-height: 1.8;
+            text-align: center;
+            color: rgba(255, 255, 255, 0.85);
+        }
+
+        .disclaimer-text p {
+            margin-bottom: 1.5rem;
+        }
+
+        /* PRINT STYLES */
+        @media print {
+            .no-print {
+                display: none;
+            }
+            body {
+                background: white;
+            }
+            .container {
+                background: white;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+
+        <!-- COVER PAGE -->
+        <div id="cover">
+            <div class="cover-corner top-right"></div>
+            <div class="cover-corner bottom-left"></div>
+            <div class="cover-corner bottom-right"></div>
+
+            <div class="cover-top">
+                <div></div>
+                <div class="cover-top-right">
+                    Confidential Information Memorandum
+                </div>
+            </div>
+
+            <div class="cover-center">
+                <div class="cover-badge">Hotel & Hospitality</div>
+                <h1 class="cover-business-name">Anchor & Vine<br>Hospitality Group</h1>
+                <div class="cover-divider"></div>
+                <p class="cover-tagline">Premier Waterfront Boutique Hotels – Gulf Coast, Florida</p>
+
+                <div class="cover-price-container">
+                    <div class="cover-price-label">Asking Price</div>
+                    <div class="cover-price-rule-top"></div>
+                    <p class="cover-price-value">$8,500,000</p>
+                    <div class="cover-price-rule-bottom"></div>
+                </div>
+            </div>
+
+            <div class="cover-bottom">
+                <div class="cover-bottom-left">Prepared exclusively for prospective acquirers</div>
+                <div class="cover-bottom-center">August 26, 2026</div>
+                <div class="cover-bottom-right">Strictly Private & Confidential</div>
+            </div>
+        </div>
+
+        <!-- TABLE OF CONTENTS -->
+        <div id="toc">
+            <h2 class="toc-title">Table of Contents</h2>
+
+            <div class="toc-entry">
+                <span class="toc-numeral">I</span>
+                <span class="toc-title-text">Investment Overview</span>
+                <span class="toc-leader"></span>
+                <span class="toc-arrow">→</span>
+            </div>
+
+            <div class="toc-entry">
+                <span class="toc-numeral">II</span>
+                <span class="toc-title-text">The Enterprise</span>
+                <span class="toc-leader"></span>
+                <span class="toc-arrow">→</span>
+            </div>
+
+            <div class="toc-entry">
+                <span class="toc-numeral">III</span>
+                <span class="toc-title-text">Financial Performance</span>
+                <span class="toc-leader"></span>
+                <span class="toc-arrow">→</span>
+            </div>
+
+            <div class="toc-entry">
+                <span class="toc-numeral">IV</span>
+                <span class="toc-title-text">Operations & Management</span>
+                <span class="toc-leader"></span>
+                <span class="toc-arrow">→</span>
+            </div>
+
+            <div class="toc-entry">
+                <span class="toc-numeral">V</span>
+                <span class="toc-title-text">Market Position</span>
+                <span class="toc-leader"></span>
+                <span class="toc-arrow">→</span>
+            </div>
+
+            <div class="toc-entry">
+                <span class="toc-numeral">VI</span>
+                <span class="toc-title-text">Legal & Compliance</span>
+                <span class="toc-leader"></span>
+                <span class="toc-arrow">→</span>
+            </div>
+
+            <div class="toc-entry">
+                <span class="toc-numeral">VII</span>
+                <span class="toc-title-text">Leadership & Staff</span>
+                <span class="toc-leader"></span>
+                <span class="toc-arrow">→</span>
+            </div>
+
+            <div class="toc-entry">
+                <span class="toc-numeral">VIII</span>
+                <span class="toc-title-text">Growth Potential</span>
+                <span class="toc-leader"></span>
+                <span class="toc-arrow">→</span>
+            </div>
+
+            <div class="toc-entry">
+                <span class="toc-numeral">IX</span>
+                <span class="toc-title-text">Risk Considerations</span>
+                <span class="toc-leader"></span>
+                <span class="toc-arrow">→</span>
+            </div>
+
+            <div class="toc-entry">
+                <span class="toc-numeral">X</span>
+                <span class="toc-title-text">Supporting Documents</span>
+                <span class="toc-leader"></span>
+                <span class="toc-arrow">→</span>
+            </div>
+        </div>
+
+        <!-- KEY METRICS STRIP -->
+        <div id="metrics-strip">
+            <div class="metric-card">
+                <div class="metric-label">Annual Revenue</div>
+                <div class="metric-value">$14.2M</div>
+                <div class="metric-unit">FY2025</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Occupancy Rate</div>
+                <div class="metric-value">92%</div>
+                <div class="metric-unit">Portfolio Average</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Total Keys</div>
+                <div class="metric-value">212</div>
+                <div class="metric-unit">3 Waterfront Hotels</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">EBITDA Margin</div>
+                <div class="metric-value">27.8%</div>
+                <div class="metric-unit">Adjusted FY2025</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Repeat Guest Rate</div>
+                <div class="metric-value">41%</div>
+                <div class="metric-unit">Portfolio Average</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Guest Rating</div>
+                <div class="metric-value">4.7/5.0</div>
+                <div class="metric-unit">6,200+ Reviews</div>
+            </div>
+        </div>
+
+        <!-- SECTION I: INVESTMENT OVERVIEW -->
+        <section id="section-1">
+            <div class="section-header">
+                <div class="section-numeral">I</div>
+                <div class="section-rule-top"></div>
+                <h2 class="section-title">Investment Overview</h2>
+                <div class="section-rule-bottom"></div>
+                <p class="section-description">Executive summary and investment thesis for Anchor & Vine Hospitality Group</p>
+            </div>
+
+            <div class="section-body">
+
+                <p class="narrative-pull">
+                    Anchor & Vine Hospitality Group represents a rare opportunity to acquire a highly profitable, strategically positioned collection of three award-winning waterfront boutique hotels on Florida's Gulf Coast. With a 14-year track record of exceptional operational execution, strong unit economics, and demonstrated pricing power, the company is positioned as the #2 independent operator by RevPAR in its region.
+                </p>
+
+                <h3>Key Investment Highlights</h3>
+                <ul class="bullet-list">
+                    <li><strong>Proven Operating Model:</strong> 14-year history of disciplined growth from 1 to 3 properties with consistent profitability and operational excellence</li>
+                    <li><strong>Strong Unit Economics:</strong> 92% occupancy, $186 RevPAR, 27.8% adjusted EBITDA margin, and 41% repeat guest rate demonstrate pricing power and operational efficiency</li>
+                    <li><strong>Diversified Revenue:</strong> 62.7% rooms, 34.0% food & beverage (award-winning on-site dining), 3.3% spa and ancillary services provide revenue stability</li>
+                    <li><strong>Premier Assets:</strong> Three freehold waterfront properties in high-value Gulf Coast markets (Clearwater, Sarasota, Naples); all renovated within the past 5 years; two properties hold AAA Four Diamond certification</li>
+                    <li><strong>Exceptional Guest Loyalty:</strong> 4.7/5.0 rating across 6,200+ guest reviews; 41% repeat guest rate significantly exceeds industry benchmarks</li>
+                    <li><strong>Scalable Operations:</strong> Standardized SOPs and training programs enable new property integration within 90 days; unified brand identity since 2019 rebrand</li>
+                    <li><strong>Attractive Valuation:</strong> $8.5M asking price represents 2.15x FY2025 Adjusted EBITDA with 90-day seller transition consulting period</li>
+                </ul>
+
+                <h3>Financial Summary</h3>
+                <div class="two-col-60-40">
+                    <div class="two-col-60">
+                        <p>Anchor & Vine delivered strong and consistent revenue growth, increasing from $11.8M in FY2023 to $14.2M in FY2025, a 20.3% CAGR. Adjusted EBITDA of $3.95M represents a margin expansion of 240 basis points year-over-year, driven by disciplined cost management and revenue optimization across the portfolio.</p>
+                        <p style="margin-top: 1.5rem;">The company maintains a conservative capital structure with $2.1M outstanding mortgage debt at 5.4% fixed across 2 properties, maturing in 2031. This debt represents only 26.7% of the asking price, creating significant equity value for the acquirer.</p>
+                    </div>
+                    <div class="two-col-40">
+                        <h4>Key Metrics</h4>
+                        <ul>
+                            <li><strong>FY2025 Revenue:</strong> $14,200,000</li>
+                            <li><strong>Adjusted EBITDA:</strong> $3,950,000</li>
+                            <li><strong>EBITDA Margin:</strong> 27.8%</li>
+                            <li><strong>Revenue CAGR (2023–2025):</strong> 20.3%</li>
+                            <li><strong>Outstanding Debt:</strong> $2,100,000</li>
+                            <li><strong>Asking Price:</strong> $8,500,000</li>
+                            <li><strong>Price / Adj. EBITDA:</strong> 2.15x</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <h3>Transaction Terms</h3>
+                <ul class="bullet-list">
+                    <li><strong>Asking Price:</strong> $8,500,000</li>
+                    <li><strong>Transaction Structure:</strong> Asset sale of three property-level subsidiaries plus unified brand, systems, and goodwill under single Delaware LLC holding company</li>
+                    <li><strong>Seller Support:</strong> Founders Maria Chen (CEO) and David Okoye (COO) offering 90-day transition consulting period post-close</li>
+                    <li><strong>Assumed Debt:</strong> $2.1M mortgage at 5.4% fixed, maturing 2031, subject to lender approval for assumption or refinance</li>
+                </ul>
+
+            </div>
+        </section>
+
+        <!-- SECTION II: THE ENTERPRISE -->
+        <section id="section-2">
+            <div class="section-header">
+                <div class="section-numeral">II</div>
+                <div class="section-rule-top"></div>
+                <h2 class="section-title">The Enterprise</h2>
+                <div class="section-rule-bottom"></div>
+                <p class="section-description">Company overview, properties, competitive positioning, and strategic strengths</p>
+            </div>
+
+            <div class="section-body">
+
+                <h3>Company Overview & Heritage</h3>
+                <p>
+                    Anchor & Vine Hospitality Group was founded in 2011 by hospitality operators Maria Chen and David Okoye, who transformed a single boutique waterfront property into a regionally respected three-property collection. Over 14 years, the company has established itself as the #2 independent operator in the Gulf Coast region by RevPAR, achieving this position through unwavering commitment to guest experience, operational excellence, and authentic local partnerships.
+                </p>
+
+                <p style="margin-top: 1.5rem;">
+                    100% privately held with no outside investors, Anchor & Vine remains founder-led and focused on long-term value creation rather than short-term financial optimization. The company's core values—guest-first service, sustainable sourcing, and community partnership—are embedded throughout its operations.
+                </p>
+
+                <h3>Portfolio Properties</h3>
+
+                <div class="card-grid-2">
+                    <div class="card">
+                        <h4>Clearwater Beach Hotel</h4>
+                        <p><strong>Location:</strong> Clearwater, Florida</p>
+                        <p><strong>Keys:</strong> ~70 rooms</p>
+                        <p><strong>Status:</strong> Freehold; renovated 2022; AAA Four Diamond certified</p>
+                        <p><strong>Amenities:</strong> On-site restaurant, event venue, spa services</p>
+                    </div>
+
+                    <div class="card">
+                        <h4>Sarasota Waterfront Hotel</h4>
+                        <p><strong>Location:</strong> Sarasota, Florida</p>
+                        <p><strong>Keys:</strong> ~75 rooms</p>
+                        <p><strong>Status:</strong> Freehold; renovated 2023</p>
+                        <p><strong>Amenities:</strong> Two on-site restaurants, wedding venue, spa services</p>
+                    </div>
+
+                    <div class="card">
+                        <h4>Naples Luxury Waterfront Hotel</h4>
+                        <p><strong>Location:</strong> Naples, Florida</p>
+                        <p><strong>Keys:</strong> ~67 rooms</p>
+                        <p><strong>Status:</strong> Freehold; renovated 2020; AAA Four Diamond certified</p>
+                        <p><strong>Amenities:</strong> One on-site restaurant, upscale event space</p>
+                    </div>
+                </div>
+
+                <p style="margin-top: 2rem;"><strong>Portfolio Total:</strong> 212 keys across 3 properties; all freehold; each property recently renovated</p>
+
+                <h3>Products & Services</h3>
+                <ul class="bullet-list">
+                    <li><strong>Guest Accommodations:</strong> Upscale rooms and suites across 3 waterfront properties, positioned in the upper-midscale to luxury segment</li>
+                    <li><strong>Food & Beverage:</strong> Four on-site restaurants (combined) with award-winning culinary programs; strong local reputation for regional ingredients and innovative menus</li>
+                    <li><strong>Event & Wedding Venues:</strong> Each property hosts weddings, corporate retreats, and private events; strong reputation for elegant waterfront settings</li>
+                    <li><strong>Spa Services:</strong> Wellness and spa offerings at 2 of 3 properties (Clearwater, Sarasota); expansion to Naples under consideration</li>
+                </ul>
+
+                <h3>Competitive Advantages</h3>
+                <div class="two-col-60-40">
+                    <div class="two-col-60">
+                        <p>Anchor & Vine's competitive position rests on several durable, difficult-to-replicate advantages:</p>
+                        <p style="margin-top: 1rem;"><strong>1. Prime Waterfront Locations:</strong> Each property commands freehold waterfront real estate in high-demand Gulf Coast markets, providing strategic pricing power and insulation from new branded competition.</p>
+                        <p><strong>2. Operational Consistency:</strong> Long-tenured general managers at each property (averaging 8+ years tenure) embody the company's culture and guest standards.</p>
+                        <p><strong>3. Brand Reputation:</strong> Unified "Anchor & Vine" brand identity since 2019 has created strong recognition among leisure and event guests; 4.7/5.0 rating across 6,200+ reviews.</p>
+                        <p><strong>4. Guest Loyalty:</strong> 41% repeat guest rate significantly exceeds industry benchmarks, reducing reliance on costly acquisition channels and providing revenue visibility.</p>
+                        <p><strong>5. Scalable Operating Model:</strong> Standardized SOPs and training programs enable efficient integration of new properties within 90 days.</p>
+                    </div>
+                    <div class="two-col-40">
+                        <h4>Market Position</h4>
+                        <ul>
+                            <li><strong>#2 Independent Operator</strong> in Gulf Coast region by RevPAR</li>
+                            <li><strong>$186 RevPAR</strong> (2025)</li>
+                            <li><strong>92% Occupancy</strong> portfolio average</li>
+                            <li><strong>4.7/5.0 Guest Rating</strong> across 6,200+ reviews</li>
+                            <li><strong>41% Repeat Rate</strong> (vs. industry ~25%)</li>
+                            <li><strong>2 AAA Four Diamond Properties</strong></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <h3>SWOT Analysis</h3>
+                <div class="swot-grid">
+                    <div class="swot-quadrant swot-strengths">
+                        <div class="swot-title">Strengths</div>
+                        <ul class="swot-list">
+                            <li>Premium waterfront freehold real estate in high-demand markets</li>
+                            <li>Exceptional guest satisfaction and loyalty (41% repeat rate, 4.7/5.0 rating)</li>
+                            <li>Strong unit economics (92% occupancy, 27.8% EBITDA margin)</li>
+                            <li>Proven founder-led management team with 14-year track record</li>
+                            <li>Award-winning food & beverage program (34% of revenue)</li>
+                            <li>Diversified revenue streams (rooms, F&B, events, spa)</li>
+                        </ul>
+                    </div>
+
+                    <div class="swot-quadrant swot-weaknesses">
+                        <div class="swot-title">Weaknesses</div>
+                        <ul class="swot-list">
+                            <li>Limited group/conference meeting space constrains corporate/group segment growth</li>
+                            <li>Seasonal revenue fluctuations typical of leisure-oriented Gulf Coast properties</li>
+                            <li>Reliance on owner-operators for continued execution (succession plan in early stages for CEO/COO)</li>
+                            <li>Exposure to regional hurricane and weather risk (fully insured)</li>
+                        </ul>
+                    </div>
+
+                    <div class="swot-quadrant swot-opportunities">
+                        <div class="swot-title">Opportunities</div>
+                        <ul class="swot-list">
+                            <li>4th and 5th property acquisition pipeline identified in adjacent Gulf Coast markets</li>
+                            <li>Expansion of spa services to Clearwater property (currently only at 2 of 3 properties)</li>
+                            <li>Corporate/bleisure segment expansion from 10% to estimated 18–20% via dedicated sales hire</li>
+                            <li>Regional wedding-planning network partnerships for preferred-venue status</li>
+                            <li>Potential to develop proprietary loyalty and membership programs</li>
+                        </ul>
+                    </div>
+
+                    <div class="swot-quadrant swot-threats">
+                        <div class="swot-title">Threats</div>
+                        <ul class="swot-list">
+                            <li>New branded hotel entering Sarasota market in 2027 with significant capital backing</li>
+                            <li>Regional food cost inflation directly impacting F&B COGS (currently 28% of F&B revenue)</li>
+                            <li>Hurricane/weather exposure seasonal to Gulf Coast coastal properties</li>
+                            <li>Labor market tightness and wage inflation affecting hospitality staffing</li>
+                        </ul>
+                    </div>
+                </div>
+
+            </div>
+        </section>
+
+        <!-- SECTION III: FINANCIAL PERFORMANCE -->
+        <section id="section-3">
+            <div class="section-header">
+                <div class="section-numeral">III</div>
+                <div class="section-rule-top"></div>
+                <h2 class="section-title">Financial Performance</h2>
+                <div class="section-rule-bottom"></div>
+                <p class="section-description">Historical financial statements, profitability analysis, and key performance metrics</p>
+            </div>
+
+            <div class="section-body">
+
+                <h3>Revenue & Profitability Summary</h3>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Fiscal Year</th>
+                            <th class="numeric">Total Revenue</th>
+                            <th class="numeric">Adjusted EBITDA</th>
+                            <th class="numeric">EBITDA Margin</th>
+                            <th class="numeric">YoY Growth</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>FY2023</td>
+                            <td class="numeric">$11,800,000</td>
+                            <td class="numeric">—</td>
+                            <td class="numeric">—</td>
+                            <td class="numeric">—</td>
+                        </tr>
+                        <tr>
+                            <td>FY2024</td>
+                            <td class="numeric">$12,900,000</td>
+                            <td class="numeric">$3,180,000</td>
+                            <td class="numeric">24.7%</td>
+                            <td class="numeric">9.3%</td>
+                        </tr>
+                        <tr class="summary">
+                            <td>FY2025</td>
+                            <td class="numeric">$14,200,000</td>
+                            <td class="numeric">$3,950,000</td>
+                            <td class="numeric">27.8%</td>
+                            <td class="numeric">10.1%</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <p style="margin-top: 2rem;">
+                    <strong>Key Observations:</strong> Revenue CAGR (2023–2025) of 20.3% reflects both occupancy growth and successful rate optimization across the portfolio. Adjusted EBITDA margin expansion of 240 basis points from FY2024 to FY2025 demonstrates operational leverage and disciplined cost management. The company achieved double-digit revenue growth while improving profitability, a testament to the management team's pricing and cost discipline.
+                </p>
+
+                <h3>Revenue Breakdown (FY2025)</h3>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Revenue Stream</th>
+                            <th class="numeric">Amount</th>
+                            <th class="numeric">% of Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Rooms</td>
+                            <td class="numeric">$8,900,000</td>
+                            <td class="numeric">62.7%</td>
+                        </tr>
+                        <tr>
+                            <td>Food & Beverage</td>
+                            <td class="numeric">$4,830,000</td>
+                            <td class="numeric">34.0%</td>
+                        </tr>
+                        <tr>
+                            <td>Spa & Other</td>
+                            <td class="numeric">$470,000</td>
+                            <td class="numeric">3.3%</td>
+                        </tr>
+                        <tr class="summary">
+                            <td><strong>Total Revenue</strong></td>
+                            <td class="numeric"><strong>$14,200,000</strong></td>
+                            <td class="numeric"><strong>100.0%</strong></td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <div class="narrative-pull">
+                    The diversification across rooms, F&B, and ancillary services provides revenue stability and cross-selling opportunities. F&B contribution of 34% of total revenue (driven by award-winning on-site restaurants) significantly exceeds typical luxury hotel benchmarks of 18–22%, reflecting the strength of the culinary program and venue reputation.
+                </div>
+
+                <h3>Operational KPIs (FY2025)</h3>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Metric</th>
+                            <th class="numeric">Value</th>
+                            <th>Notes</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Total Keys</td>
+                            <td class="numeric">212</td>
+                            <td>3 properties</td>
+                        </tr>
+                        <tr>
+                            <td>Average Daily Rate (ADR)</td>
+                            <td class="numeric">$202</td>
+                            <td>Portfolio blended</td>
+                        </tr>
+                        <tr>
+                            <td>Occupancy Rate</td>
+                            <td class="numeric">92%</td>
+                            <td>Portfolio average</td>
+                        </tr>
+                        <tr class="summary">
+                            <td><strong>RevPAR</strong></td>
+                            <td class="numeric"><strong>$186</strong></td>
+                            <td>#2 independent operator in region</td>
+                        </tr>
+                        <tr>
+                            <td>Repeat Guest Rate</td>
+                            <td class="numeric">41%</td>
+                            <td>Industry avg. ~25%</td>
+                        </tr>
+                        <tr>
+                            <td>Guest Rating</td>
+                            <td class="numeric">4.7/5.0</td>
+                            <td>6,200+ reviews</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3>Cost Structure (FY2025 %)</h3>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Cost Category</th>
+                            <th class="numeric">% of Revenue</th>
+                            <th>Notes</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Labor</td>
+                            <td class="numeric">31%</td>
+                            <td>Unionized and non-unionized staff across 3 properties</td>
+                        </tr>
+                        <tr>
+                            <td>F&B COGS</td>
+                            <td class="numeric">28% of F&B revenue</td>
+                            <td>Reflects award-winning culinary program and quality sourcing</td>
+                        </tr>
+                        <tr>
+                            <td>Occupancy (Rent)</td>
+                            <td class="numeric">N/A</td>
+                            <td>All properties are freehold; no rent expense</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3>Debt Structure</h3>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Debt Instrument</th>
+                            <th class="numeric">Outstanding Balance</th>
+                            <th>Interest Rate</th>
+                            <th>Maturity</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Mortgage (Property 1 & 2)</td>
+                            <td class="numeric">$2,100,000</td>
+                            <td class="numeric">5.4% fixed</td>
+                            <td>2031</td>
+                        </tr>
+                        <tr class="summary">
+                            <td><strong>Total Debt</strong></td>
+                            <td class="numeric"><strong>$2,100,000</strong></td>
+                            <td></td>
+                            <td></td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <p style="margin-top: 2rem;">
+                    <strong>Debt / EBITDA Ratio:</strong> 0.53x (FY2025 Adjusted EBITDA). The conservative leverage profile provides optionality for the acquirer to deploy additional debt financing if desired. Mortgage assumes lender consent for assumption or refinancing post-acquisition.
+                </p>
+
+                <h3>Financial Ratios & Trends</h3>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Ratio / Metric</th>
+                            <th class="numeric">FY2024</th>
+                            <th class="numeric">FY2025</th>
+                            <th>Trend</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>EBITDA Margin</td>
+                            <td class="numeric">24.7%</td>
+                            <td class="numeric">27.8%</td>
+                            <td>↑ 310 bps</td>
+                        </tr>
+                        <tr>
+                            <td>Revenue Growth</td>
+                            <td class="numeric">9.3%</td>
+                            <td class="numeric">10.1%</td>
+                            <td>↑ Accelerating</td>
+                        </tr>
+                        <tr>
+                            <td>Debt / EBITDA</td>
+                            <td class="numeric">0.66x</td>
+                            <td class="numeric">0.53x</td>
+                            <td>↓ Deleveraging</td>
+                        </tr>
+                        <tr>
+                            <td>Price / Adj. EBITDA</td>
+                            <td class="numeric">—</td>
+                            <td class="numeric">2.15x</td>
+                            <td>Attractive entry</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+            </div>
+        </section>
+
+        <!-- SECTION IV: OPERATIONS & MANAGEMENT -->
+        <section id="section-4">
+            <div class="section-header">
+                <div class="section-numeral">IV</div>
+                <div class="section-rule-top"></div>
+                <h2 class="section-title">Operations & Management</h2>
+                <div class="section-rule-bottom"></div>
+                <p class="section-description">Operating infrastructure, technology, supply chain, quality standards, and scalability</p>
+            </div>
+
+            <div class="section-body">
+
+                <h3>Technology & Systems</h3>
+
+                <ul class="bullet-list">
+                    <li><strong>Property Management System:</strong> Cloud-based Cloudbeds PMS across all 3 properties, enabling centralized reservation management, reporting, and guest experience personalization</li>
+                    <li><strong>Revenue Management:</strong> Integrated revenue management system with dynamic pricing algorithms optimizing rates across all properties in real-time</li>
+                    <li><strong>Guest Communications:</strong> Automated pre-arrival and post-stay engagement systems driving repeat bookings and reviews</li>
+                    <li><strong>Point-of-Sale:</strong> Centralized POS system across all F&B venues enabling consistent menu pricing and cost tracking</li>
+                </ul>
+
+                <h3>Supply Chain & Procurement</h3>
+
+                <div class="two-col-60-40">
+                    <div class="two-col-60">
+                        <p>
+                            Food & beverage sourcing leverages a network of 6 regional vendors under annual contracts, emphasizing sustainable sourcing and local partnerships. No single vendor exceeds 18% of COGS, ensuring supply chain resilience and pricing flexibility.
+                        </p>
+                        <p style="margin-top: 1.5rem;">
+                            The award-winning culinary program prioritizes seasonal, locally-sourced ingredients, a strategic differentiator in the competitive Gulf Coast market. Vendor relationships, built over 14 years, provide stability and favorable terms.
+                        </p>
+                    </div>
+                    <div class="two-col-40">
+                        <h4>Supply Chain Highlights</h4>
+                        <ul>
+                            <li>6 regional F&B vendors</li>
+                            <li>No single vendor >18% COGS</li>
+                            <li>Annual contracts</li>
+                            <li>Emphasis on local sourcing</li>
+                            <li>Established 14-year relationships</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <h3>Quality Standards & Certifications</h3>
+
+                <ul class="bullet-list">
+                    <li><strong>AAA Four Diamond Rating:</strong> 2 of 3 properties (Clearwater and Naples) certified; Sarasota property pursuing certification</li>
+                    <li><strong>Liquor & Food Service Licenses:</strong> All permits current and in good standing at all 3 properties</li>
+                    <li><strong>Health & Safety Compliance:</strong> Regular third-party audits; full compliance with local, state, and federal hospitality regulations</li>
+                </ul>
+
+                <h3>Scalability & Growth Readiness</h3>
+
+                <p>
+                    The company has implemented a scalable operating model enabling rapid integration of new properties. Key components include:
+                </p>
+
+                <ul class="bullet-list">
+                    <li><strong>Standardized SOPs:</strong> Documented procedures for housekeeping, front desk, F&B operations, event management, and guest services across all properties</li>
+                    <li><strong>Centralized Training Program:</strong> New-hire onboarding and certification program ensures consistent service delivery and brand standards</li>
+                    <li><strong>Unified Brand & Systems:</strong> Anchor & Vine brand identity, cloud-based tech stack, and procurement relationships enable new property integration within 90 days</li>
+                    <li><strong>Management Bench Strength:</strong> VP Operations (Marcus Webb, 4 years tenure) identified as internal successor to COO role, reducing key person risk</li>
+                </ul>
+
+                <h3>Intellectual Property</h3>
+
+                <ul class="bullet-list">
+                    <li><strong>Brand:</strong> "Anchor & Vine" trademark registered and protected; unified brand identity and design standards across all properties</li>
+                    <li><strong>Proprietary Processes:</strong> Culinary recipes and wine programs; revenue management algorithms; guest loyalty scoring models</li>
+                    <li><strong>Guest Data:</strong> Historical guest information, preferences, and loyalty data embedded in cloud-based CRM system</li>
+                </ul>
+
+            </div>
+        </section>
+
+        <!-- SECTION V: MARKET POSITION -->
+        <section id="section-5">
+            <div class="section-header">
+                <div class="section-numeral">V</div>
+                <div class="section-rule-top"></div>
+                <h2 class="section-title">Market Position</h2>
+                <div class="section-rule-bottom"></div>
+                <p class="section-description">Marketing strategy, customer segmentation, brand positioning, and distribution channels</p>
+            </div>
+
+            <div class="section-body">
+
+                <h3>Target Market & Customer Segmentation</h3>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Guest Segment</th>
+                            <th class="numeric">% of Bookings</th>
+                            <th>Profile & Drivers</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Leisure Travelers</td>
+                            <td class="numeric">68%</td>
+                            <td>Individual and couple vacations; waterfront destination appeal; award-winning F&B and amenities</td>
+                        </tr>
+                        <tr>
+                            <td>Weddings & Small Events</td>
+                            <td class="numeric">22%</td>
+                            <td>Private ceremonies and receptions; waterfront venues; event planning services</td>
+                        </tr>
+                        <tr>
+                            <td>Corporate & Bleisure</td>
+                            <td class="numeric">10%</td>
+                            <td>Business travel, executive retreats, incentive groups; growth opportunity identified</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3>Marketing Channels & Strategy</h3>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Channel</th>
+                            <th class="numeric">% of Bookings</th>
+                            <th>Strategy</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Direct Website</td>
+                            <td class="numeric">38%</td>
+                            <td>High-margin direct bookings; SEO, content marketing, email nurture programs</td>
+                        </tr>
+                        <tr>
+                            <td>Online Travel Agencies (OTAs)</td>
+                            <td class="numeric">35%</td>
+                            <td>Distribution through Booking.com, Expedia, Airbnb; rate parity management</td>
+                        </tr>
+                        <tr>
+                            <td>Repeat / Referral</td>
+                            <td class="numeric">27%</td>
+                            <td>Loyalty program outreach; post-stay engagement; word-of-mouth from strong reviews</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <div class="narrative-pull">
+                    The 38% direct booking rate reflects successful brand-building and guest loyalty initiatives. The 27% repeat/referral channel is a significant competitive advantage, reducing customer acquisition costs and improving lifetime value metrics.
+                </div>
+
+                <h3>Marketing & Sales Budget</h3>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Budget Category</th>
+                            <th class="numeric">Annual Spend</th>
+                            <th class="numeric">% of Total Budget</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Digital Marketing (SEO, SEM, Social)</td>
+                            <td class="numeric">$250,000</td>
+                            <td class="numeric">40%</td>
+                        </tr>
+                        <tr>
+                            <td>OTA Commission & Management</td>
+                            <td class="numeric">$180,000</td>
+                            <td class="numeric">29%</td>
+                        </tr>
+                        <tr>
+                            <td>Events & Partnerships</td>
+                            <td class="numeric">$120,000</td>
+                            <td class="numeric">19%</td>
+                        </tr>
+                        <tr>
+                            <td>Advertising & PR</td>
+                            <td class="numeric">$70,000</td>
+                            <td class="numeric">12%</td>
+                        </tr>
+                        <tr class="summary">
+                            <td><strong>Total Marketing & Sales</strong></td>
+                            <td class="numeric"><strong>$620,000</strong></td>
+                            <td class="numeric"><strong>4.4% of Revenue</strong></td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3>Branding & Brand Performance</h3>
+
+                <ul class="bullet-list">
+                    <li><strong>Unified Brand Identity:</strong> "Anchor & Vine" brand launched in 2019; consistent visual identity, messaging, and positioning across all 3 properties</li>
+                    <li><strong>Brand Recognition:</strong> Growing regional presence among leisure and event planners; strong brand recall among repeat guests</li>
+                    <li><strong>Guest Reputation:</strong> 4.7/5.0 average rating across 6,200+ reviews on major platforms (Google, TripAdvisor, OTA sites)</li>
+                    <li><strong>Awards & Recognition:</strong> Multiple local and regional hospitality awards; strong culinary recognition for on-site restaurants</li>
+                </ul>
+
+                <h3>Customer Acquisition Economics</h3>
+
+                <div class="two-col-60-40">
+                    <div class="two-col-60">
+                        <p>
+                            Customer acquisition cost (CAC) of $46 per booked reservation reflects a disciplined, multi-channel marketing approach with strong leverage on organic/repeat channels.
+                        </p>
+                        <p style="margin-top: 1.5rem;">
+                            The 41% repeat guest rate and strong referral channel significantly reduce marginal customer acquisition costs, improving unit economics relative to single-visit leisure competitors.
+                        </p>
+                    </div>
+                    <div class="two-col-40">
+                        <h4>Key Metrics</h4>
+                        <ul>
+                            <li><strong>CAC:</strong> $46 per booked reservation</li>
+                            <li><strong>Repeat Rate:</strong> 41%</li>
+                            <li><strong>Direct Bookings:</strong> 38%</li>
+                            <li><strong>Guest Rating:</strong> 4.7/5.0</li>
+                            <li><strong>Review Volume:</strong> 6,200+ reviews</li>
+                        </ul>
+                    </div>
+                </div>
+
+            </div>
+        </section>
+
+        <!-- SECTION VI: LEGAL & COMPLIANCE -->
+        <section id="section-6">
+            <div class="section-header">
+                <div class="section-numeral">VI</div>
+                <div class="section-rule-top"></div>
+                <h2 class="section-title">Legal & Compliance</h2>
+                <div class="section-rule-bottom"></div>
+                <p class="section-description">Legal structure, regulatory compliance, insurance, and litigation status</p>
+            </div>
+
+            <div class="section-body">
+
+                <h3>Legal Structure</h3>
+
+                <ul class="bullet-list">
+                    <li><strong>Holding Company:</strong> Single Delaware LLC holding company (Anchor & Vine Hospitality Group, LLC) owns and controls all operations</li>
+                    <li><strong>Subsidiaries:</strong> 3 property-level LLC subsidiaries (one per waterfront property) facilitate separate property management and liability isolation</li>
+                    <li><strong>Ownership:</strong> 100% privately held by founders Maria Chen and David Okoye; no outside investors, institutional shareholders, or option holders</li>
+                    <li><strong>Good Standing:</strong> All entities in good standing with Florida Secretary of State and local county authorities</li>
+                </ul>
+
+                <h3>Permits, Licenses & Regulatory Compliance</h3>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th>License / Permit Type</th>
+                            <th>Status</th>
+                            <th>Properties Affected</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Liquor License</td>
+                            <td>Current</td>
+                            <td>All 3 properties</td>
+                        </tr>
+                        <tr>
+                            <td>Food Service License</td>
+                            <td>Current</td>
+                            <td>All 3 properties</td>
+                        </tr>
+                        <tr>
+                            <td>Event/Catering Permits</td>
+                            <td>Current</td>
+                            <td>All 3 properties</td>
+                        </tr>
+                        <tr>
+                            <td>Hotel Operating License</td>
+                            <td>Current</td>
+                            <td>All 3 properties</td>
+                        </tr>
+                        <tr>
+                            <td>Health Department Certification</td>
+                            <td>Current</td>
+                            <td>All 3 properties</td>
+                        </tr>
+                        <tr class="summary">
+                            <td><strong>Regulatory Status</strong></td>
+                            <td><strong>Fully Compliant</strong></td>
+                            <td></td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3>Insurance Coverage</h3>
+
+                <ul class="bullet-list">
+                    <li><strong>General Liability & Property Insurance:</strong> $15,000,000 combined limits across all 3 properties</li>
+                    <li><strong>Coverage Scope:</strong> Property damage, bodily injury, liquor liability, event liability, management liability</li>
+                    <li><strong>Provider:</strong> Blue-chip commercial insurance carrier; policies reviewed annually with brokers</li>
+                    <li><strong>Deductibles:</strong> Standard commercial hospitality deductibles; hurricane/weather deductible subject to policy terms</li>
+                </ul>
+
+                <h3>Litigation & Disputes</h3>
+
+                <ul class="bullet-list">
+                    <li><strong>Outstanding Litigation:</strong> None. No pending or threatened litigation against the company, its properties, management, or operations</li>
+                    <li><strong>Regulatory Disputes:</strong> No open disputes with local, state, or federal regulators</li>
+                    <li><strong>Material Contracts:</strong> No breach, default, or material dispute in any vendor, employment, or service contracts</li>
+                </ul>
+
+                <h3>Environmental Compliance</h3>
+
+                <ul class="bullet-list">
+                    <li><strong>Waterfront Properties:</strong> All 3 properties subject to Florida environmental regulations, wetlands protections, and coastal zone management requirements</li>
+                    <li><strong>Compliance Status:</strong> All properties in full compliance with state and local environmental regulations</li>
+                    <li><strong>Phase I Environmental Assessments:</strong> Available upon request for due diligence</li>
+                </ul>
+
+            </div>
+        </section>
+
+        <!-- SECTION VII: LEADERSHIP & STAFF -->
+        <section id="section-7">
+            <div class="section-header">
+                <div class="section-numeral">VII</div>
+                <div class="section-rule-top"></div>
+                <h2 class="section-title">Leadership & Staff</h2>
+                <div class="section-rule-bottom"></div>
+                <p class="section-description">Management team, organizational structure, employee benefits, and succession planning</p>
+            </div>
+
+            <div class="section-body">
+
+                <h3>Executive Management Team</h3>
+
+                <div class="card-grid-2">
+                    <div class="card">
+                        <span class="title-accent">Founder & Chief Executive Officer</span>
+                        <h4>Maria Chen</h4>
+                        <p><strong>Tenure:</strong> 14 years (founder 2011)</p>
+                        <p><strong>Background:</strong> Hospitality operations and guest experience strategy. Responsible for overall company vision, strategic planning, and brand positioning. Deep relationships with local community and event clients.</p>
+                    </div>
+
+                    <div class="card">
+                        <span class="title-accent">Founder & Chief Operating Officer</span>
+                        <h4>David Okoye</h4>
+                        <p><strong>Tenure:</strong> 14 years (founder 2011)</p>
+                        <p><strong>Background:</strong> Property operations, capital projects, and systems implementation. Drives operational consistency and quality standards across all 3 properties.</p>
+                    </div>
+
+                    <div class="card">
+                        <span class="title-accent">Chief Financial Officer</span>
+                        <h4>Priya Anand</h4>
+                        <p><strong>Tenure:</strong> 6 years</p>
+                        <p><strong>Background:</strong> Financial planning, accounting, and reporting. Manages FP&A, monthly close, and investor reporting. Strong hospitality finance expertise.</p>
+                    </div>
+
+                    <div class="card">
+                        <span class="title-accent">Vice President, Operations</span>
+                        <h4>Marcus Webb</h4>
+                        <p><strong>Tenure:</strong> 4 years</p>
+                        <p><strong>Background:</strong> Multi-property operations and staff management. Identified as internal successor to COO role. Oversees training, quality standards, and operational consistency across all properties.</p>
+                    </div>
+                </div>
+
+                <h3>Organizational Structure & Headcount</h3>
+
+                <div class="two-col-60-40">
+                    <div class="two-col-60">
+                        <p>
+                            Anchor & Vine operates with a lean, efficient organizational structure. The company employs 168 total staff across 3 properties:
+                        </p>
+                        <ul style="margin-top: 1.5rem;" class="bullet-list">
+                            <li>94 Full-Time Employees</li>
+                            <li>74 Part-Time Employees</li>
+                            <li>Approximately 56 FTE per property (168 / 3)</li>
+                        </ul>
+                        <p style="margin-top: 1.5rem;">
+                            Staffing levels reflect labor intensity typical of upper-midscale waterfront hotels with on-site F&B operations. Part-time staff provide flexibility for seasonal demand fluctuations.
+                        </p>
+                    </div>
+                    <div class="two-col-40">
+                        <h4>Organizational Profile</h4>
+                        <ul>
+                            <li><strong>Total Headcount:</strong> 168</li>
+                            <li><strong>Full-Time:</strong> 94 (56%)</li>
+                            <li><strong>Part-Time:</strong> 74 (44%)</li>
+                            <li><strong>FTE Per Property:</strong> ~56</li>
+                            <li><strong>Labor % of Revenue:</strong> 31%</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <h3>Employee Benefits & Compensation</h3>
+
+                <ul class="bullet-list">
+                    <li><strong>Health Insurance:</strong> Comprehensive health insurance coverage for all full-time employees; employer contributes 80% of premiums</li>
+                    <li><strong>Retirement:</strong> 401(k) plan with 3% employer match for all eligible employees</li>
+                    <li><strong>Meals:</strong> F&B staff meal program providing discounted or complimentary meals during shifts</li>
+                    <li><strong>Professional Development:</strong> Annual training budget and tuition reimbursement for hospitality certifications</li>
+                    <li><strong>Competitive Positioning:</strong> Compensation packages competitive with regional hospitality operators; focus on culture and career development reduces turnover</li>
+                </ul>
+
+                <h3>Turnover & Retention</h3>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Metric</th>
+                            <th class="numeric">Anchor & Vine</th>
+                            <th class="numeric">Hospitality Industry</th>
+                            <th>Implication</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Employee Turnover Rate</td>
+                            <td class="numeric">24% annually</td>
+                            <td class="numeric">~35% average</td>
+                            <td>Significantly below industry; strong culture and retention</td>
+                        </tr>
+                        <tr>
+                            <td>Repeat Guest Rate</td>
+                            <td class="numeric">41%</td>
+                            <td class="numeric">~25% typical</td>
+                            <td>Reflects service consistency and staff continuity</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <p style="margin-top: 1.5rem;">
+                    The 24% employee turnover rate—11 percentage points below industry average—demonstrates the company's strong culture, management quality, and employee value proposition. This contributes directly to service consistency and guest satisfaction.
+                </p>
+
+                <h3>Management Succession Planning</h3>
+
+                <ul class="bullet-list">
+                    <li><strong>COO Succession:</strong> Marcus Webb (VP Operations, 4 years tenure) identified and being groomed as internal successor to David Okoye (COO) role</li>
+                    <li><strong>CEO Succession:</strong> Early-stage planning in progress for Maria Chen (CEO) transition; external recruitment may be necessary given founder-led culture</li>
+                    <li><strong>Transition Support:</strong> Founders committed to 90-day transition consulting post-acquisition to ensure continuity</li>
+                    <li><strong>Retention Incentives:</strong> Key management retention agreements recommended as part of acquisition transaction</li>
+                </ul>
+
+            </div>
+        </section>
+
+        <!-- SECTION VIII: GROWTH POTENTIAL -->
+        <section id="section-8">
+            <div class="section-header">
+                <div class="section-numeral">VIII</div>
+                <div class="section-rule-top"></div>
+                <h2 class="section-title">Growth Potential</h2>
+                <div class="section-rule-bottom"></div>
+                <p class="section-description">Strategic growth opportunities, expansion pipeline, and value creation levers</p>
+            </div>
+
+            <div class="section-body">
+
+                <p class="narrative-pull">
+                    Anchor & Vine possesses multiple, well-identified growth opportunities that can drive significant value creation for the acquirer. The scalable operating model, proven management systems, and strong market position enable near-term expansion while maintaining operational quality.
+                </p>
+
+                <h3>Strategic Growth Initiatives</h3>
+
+                <div class="timeline">
+                    <div class="timeline-item">
+                        <div class="timeline-number">1</div>
+                        <div class="timeline-content">
+                            <h4>Corporate/Bleisure Segment Expansion</h4>
+                            <p>Opportunity to grow corporate and bleisure bookings from 10% to an estimated 18–20% of total bookings via a dedicated corporate sales hire. Current limited group meeting space constrains this segment; upside from improved sales efforts alone.</p>
+                        </div>
+                    </div>
+
+                    <div class="timeline-item">
+                        <div class="timeline-number">2</div>
+                        <div class="timeline-content">
+                            <h4>Spa Services Expansion</h4>
+                            <p>Expansion of spa services to Clearwater property (currently available only at Sarasota and Naples). Spa and wellness services represent high-margin ancillary revenue; 3.3% of current revenue but expand-able to 5–7% with full portfolio coverage.</p>
+                        </div>
+                    </div>
+
+                    <div class="timeline-item">
+                        <div class="timeline-number">3</div>
+                        <div class="timeline-content">
+                            <h4>Strategic Partnerships</h4>
+                            <p>Discussions underway with regional wedding-planning networks for preferred-venue status. Partnership agreements can drive incremental bookings with low marginal cost, leveraging existing event infrastructure and reputation.</p>
+                        </div>
+                    </div>
+
+                    <div class="timeline-item">
+                        <div class="timeline-number">4</div>
+                        <div class="timeline-content">
+                            <h4>4th & 5th Property Acquisition Pipeline</h4>
+                            <p>Management has identified 2 acquisition targets (4th and 5th properties) in adjacent Gulf Coast markets (Gulf Shores, Destin, Pensacola). Properties would leverage existing brand, systems, and management infrastructure, achieving profitability within 12–18 months of integration.</p>
+                        </div>
+                    </div>
+
+                    <div class="timeline-item">
+                        <div class="timeline-number">5</div>
+                        <div class="timeline-content">
+                            <h4>Digital & Loyalty Program Enhancement</h4>
+                            <p>Develop proprietary mobile app and tiered loyalty program to deepen guest engagement and increase direct bookings. Current 38% direct booking rate has room to expand to 45–50% with enhanced digital capabilities.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <h3>Expansion Economics & Assumptions</h3>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Growth Initiative</th>
+                            <th>Estimated Impact</th>
+                            <th>Implementation Timeline</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Corporate Sales Hire</td>
+                            <td>+100–150 bps revenue growth (from 10% → 15–18% mix)</td>
+                            <td>6–12 months</td>
+                        </tr>
+                        <tr>
+                            <td>Spa Expansion (Clearwater)</td>
+                            <td>+20–30 bps revenue growth; 60% gross margin</td>
+                            <td>6–9 months</td>
+                        </tr>
+                        <tr>
+                            <td>Partnership Agreements</td>
+                            <td>+50–100 bps bookings (high margin)</td>
+                            <td>3–6 months</td>
+                        </tr>
+                        <tr>
+                            <td>4th Property Acquisition</td>
+                            <td>+$1.5–2.0M annual revenue (standalone basis)</td>
+                            <td>12–18 months post-close</td>
+                        </tr>
+                        <tr>
+                            <td>5th Property Acquisition</td>
+                            <td>+$1.5–2.0M annual revenue (standalone basis)</td>
+                            <td>18–24 months post-close</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3>Value Creation Thesis</h3>
+
+                <ul class="bullet-list">
+                    <li><strong>Operational Leverage:</strong> Existing management infrastructure, systems, and vendor relationships scale to support property expansion with minimal incremental overhead</li>
+                    <li><strong>Revenue Synergies:</strong> Brand recognition, direct booking channels, and event relationships enhance revenue potential of acquired properties vs. standalone operations</li>
+                    <li><strong>Pricing Power:</strong> Unified brand and quality positioning enable rate optimization across expanded portfolio</li>
+                    <li><strong>M&A Opportunity:</strong> Fragmented Gulf Coast boutique hotel market offers numerous acquisition targets; Anchor & Vine's proven model and established infrastructure provide competitive advantage for bolt-on acquisitions</li>
+                </ul>
+
+            </div>
+        </section>
+
+        <!-- SECTION IX: RISK CONSIDERATIONS -->
+        <section id="section-9">
+            <div class="section-header">
+                <div class="section-numeral">IX</div>
+                <div class="section-rule-top"></div>
+                <h2 class="section-title">Risk Considerations</h2>
+                <div class="section-rule-bottom"></div>
+                <p class="section-description">Key risks to business performance and mitigation considerations</p>
+            </div>
+
+            <div class="section-body">
+
+                <h3>Competitive Risks</h3>
+
+                <ul class="bullet-list">
+                    <li><strong>New Branded Competitor:</strong> A branded hotel operator is entering the Sarasota market in 2027 with significant capital backing and national brand recognition. Risk: potential share loss among corporate/group segments. Mitigation: Anchor & Vine's waterfront location, established reputation, and event capabilities provide defensibility; focus on leisure and wedding segments less affected by branded competition.</li>
+                    <li><strong>OTA Dependency:</strong> 35% of bookings via OTAs; continued commission inflation or algorithm changes could impact margins. Mitigation: Direct website bookings (38%) and loyalty/repeat business (27%) provide diversification; ongoing SEO and content investment to drive direct bookings.</li>
+                </ul>
+
+                <h3>Financial Risks</h3>
+
+                <ul class="bullet-list">
+                    <li><strong>F&B Cost Inflation:</strong> Food costs exposed to regional inflation and commodity price volatility. Current F&B COGS at 28% of F&B revenue; 500 bps inflation would pressure margins. Mitigation: Annual vendor contracts; menu engineering and pricing adjustments; cost controls have historically offset inflation.</li>
+                    <li><strong>Debt Service Obligations:</strong> $2.1M mortgage at 5.4% fixed through 2031; obligation to service regardless of business performance. Mitigation: Conservative leverage (0.53x Debt/EBITDA); strong cash flow coverage of debt service (~8x interest coverage).</li>
+                </ul>
+
+                <h3>Operational Risks</h3>
+
+                <ul class="bullet-list">
+                    <li><strong>Hurricane / Weather Exposure:</strong> Gulf Coast waterfront properties subject to seasonal hurricane risk, flooding, and severe weather. Potential for temporary closures and property damage. Mitigation: Comprehensive $15M insurance coverage; properties have withstood historical hurricanes; coastal location provides resort revenue appeal that offsets weather risk.</li>
+                    <li><strong>Labor Market Tightness:</strong> Hospitality industry experiencing wage inflation and staffing challenges. Cost pressure on 31% labor ratio. Mitigation: Strong culture and retention (24% turnover vs. 35% industry) reduce recruitment and training costs; benefits packages competitive with regional operators.</li>
+                    <li><strong>Key Person Dependency:</strong> Founder-led operations; CEO and COO integral to strategy, culture, and stakeholder relationships. Succession plan in early stages. Mitigation: VP Operations identified as COO successor; 90-day transition consulting from founders post-sale; management team bench strength through Priya Anand (CFO, 6 years) and long-tenured property GMs.</li>
+                </ul>
+
+                <h3>Market & Demand Risks</h3>
+
+                <ul class="bullet-list">
+                    <li><strong>Leisure Segment Concentration:</strong> 68% of bookings from leisure travelers; economic downturn could reduce travel demand. Mitigation: 41% repeat guest rate and strong brand loyalty provide demand stability; diversification into corporate and events reduce leisure dependency.</li>
+                    <li><strong>Seasonality:</strong> Gulf Coast properties experience seasonal demand fluctuations (peak winter, slower summer). Revenue concentration in Q4 and Q1. Mitigation: Events and wedding business extends season; F&B and spa services provide counter-seasonal revenue; occupancy management strategies optimize shoulder seasons.</li>
+                </ul>
+
+                <h3>Legal & Regulatory Risks</h3>
+
+                <ul class="bullet-list">
+                    <li><strong>Regulatory Changes:</strong> Potential changes to liquor regulations, environmental rules, or hospitality licensing could increase compliance costs. Mitigation: Current full compliance with all regulations; established relationships with local authorities and legal counsel.</li>
+                    <li><strong>Litigation:</strong> No current litigation; hospitality operations inherently subject to potential guest injury or employment claims. Mitigation: Comprehensive $15M insurance coverage; professional HR and risk management practices.</li>
+                </ul>
+
+                <h3>Integration & Acquisition Risks</h3>
+
+                <ul class="bullet-list">
+                    <li><strong>Change Management:</strong> New ownership may cause management/staff transition concerns; potential employee turnover during transition. Mitigation: 90-day founder consulting period to ensure continuity; retention agreements for key staff; clear communication of strategy and vision.</li>
+                    <li><strong>Systems Integration:</strong> If acquirer operates different tech stack, integration of property management and revenue systems could be disruptive. Mitigation: Cloudbeds and revenue management systems widely used; integration should be straightforward.</li>
+                </ul>
+
+            </div>
+        </section>
+
+        <!-- SECTION X: SUPPORTING DOCUMENTS -->
+        <section id="section-10">
+            <div class="section-header">
+                <div class="section-numeral">X</div>
+                <div class="section-rule-top"></div>
+                <h2 class="section-title">Supporting Documents</h2>
+                <div class="section-rule-bottom"></div>
+                <p class="section-description">Detailed financial data and available resources for due diligence</p>
+            </div>
+
+            <div class="section-body">
+
+                <h3>Financial & Operating Data</h3>
+
+                <ul class="bullet-list">
+                    <li><strong>Historical Financial Statements:</strong> Complete audited and unaudited financial statements available for fiscal years FY2021 through FY2025 upon execution of Confidentiality Agreement (NDA)</li>
+                    <li><strong>Monthly Management Accounts:</strong> Detailed monthly revenue, operating expense, and cash flow statements for FY2025 and trailing 12 months</li>
+                    <li><strong>Property-Level P&L:</strong> Individual profit & loss statements for each of the 3 properties, enabling performance analysis by asset</li>
+                    <li><strong>Capital Expenditure History:</strong> Summary of historical capital improvements and renovation investments across all properties</li>
+                </ul>
+
+                <h3>Market & Strategic Data</h3>
+
+                <ul class="bullet-list">
+                    <li><strong>Third-Party Market Study:</strong> Regional hospitality demand analysis and competitive positioning report (dated 2025) available upon request</li>
+                    <li><strong>Guest Review & Reputation Data:</strong> Comprehensive guest review scorecards, feedback analysis, and competitive benchmarking against regional operators</li>
+                    <li><strong>RevPAR Analysis:</strong> Historical RevPAR, ADR, and occupancy trends by property and by market segment</li>
+                </ul>
+
+                <h3>Operational & Legal Documentation</h3>
+
+                <ul class="bullet-list">
+                    <li><strong>Organizational Documents:</strong> Certificate of Formation, Operating Agreements, and governance documents for holding company and 3 property-level subsidiaries</li>
+                    <li><strong>Material Contracts:</strong> Vendor supply agreements, management agreements, employment contracts for key staff, insurance policies, and lender agreements</li>
+                    <li><strong>Regulatory & Permits:</strong> Copies of all current licenses, permits, certifications, and regulatory filings</li>
+                    <li><strong>Environmental Assessments:</strong> Phase I Environmental Site Assessments (ESAs) for all 3 waterfront properties</li>
+                    <li><strong>Real Estate Documents:</strong> Deeds, title reports, mortgages, and property appraisals for all 3 freehold properties</li>
+                </ul>
+
+                <h3>Human Resources & Employee Data</h3>
+
+                <ul class="bullet-list">
+                    <li><strong>Organizational Charts:</strong> Current organizational structure and staffing levels by property and department</li>
+                    <li><strong>Key Employee Agreements:</strong> Employment contracts for executive team and key operational staff</li>
+                    <li><strong>Benefits & Compensation Summary:</strong> Health insurance, 401(k), and compensation benchmarking data</li>
+                </ul>
+
+                <h3>Technology & Systems Documentation</h3>
+
+                <ul class="bullet-list">
+                    <li><strong>PMS & Technology Overview:</strong> Cloudbeds implementation details, integrations, and system architecture</li>
+                    <li><strong>Cybersecurity Policies:</strong> Data security practices, privacy policies, and compliance with data protection regulations</li>
+                </ul>
+
+                <h3>Due Diligence Process & Next Steps</h3>
+
+                <p style="margin-top: 2rem;">
+                    Prospective acquirers are invited to proceed through a structured due diligence process:
+                </p>
+
+                <ul class="bullet-list">
+                    <li><strong>Phase 1 – Initial Review:</strong> Review of this CIM and preliminary question list</li>
+                    <li><strong>Phase 2 – NDA Execution:</strong> Execution of Mutual Non-Disclosure Agreement enabling access to detailed financial statements (FY2021–FY2025)</li>
+                    <li><strong>Phase 3 – Data Room & Management Meetings:</strong> Access to virtual data room with operational, legal, and financial documentation; management presentations and property tours</li>
+                    <li><strong>Phase 4 – Detailed Due Diligence:</strong> Accounting, tax, legal, environmental, and operational due diligence conducted by acquirer's advisors</li>
+                    <li><strong>Phase 5 – Offer & Negotiation:</strong> Non-binding and binding offer submission; price and term negotiation</li>
+                    <li><strong>Phase 6 – Closing:</strong> Final documentation, financing, and transaction close with 90-day founder transition support</li>
+                </ul>
+
+            </div>
+        </section>
+
+        <!-- DISCLAIMER PAGE -->
+        <div id="disclaimer">
+            <div class="disclaimer-title">Important Notice & Disclaimer</div>
+            <div class="disclaimer-rule"></div>
+
+            <div class="disclaimer-text">
+                <p>
+                    This Confidential Information Memorandum (CIM) is prepared exclusively for, and may be distributed only to, prospective acquirers approved by the sellers' representatives. Recipients agree to maintain strict confidentiality and refrain from further distribution without prior written consent.
+                </p>
+
+                <p>
+                    This document contains proprietary financial projections, operating assumptions, and strategic information owned solely by Anchor & Vine Hospitality Group, LLC. Recipient's access to this information is granted solely for the purpose of evaluating a potential transaction and does not constitute an offer to sell or a solicitation to buy any securities or business interests.
+                </p>
+
+                <p>
+                    All information in this CIM is based on representations provided by the sellers' management. While reasonable efforts have been made to ensure accuracy, the sellers and their representatives make no representations or warranties, expressed or implied, regarding the completeness, accuracy, or reliability of any information contained herein. Recipients are strongly advised to conduct independent due diligence and retain qualified legal, financial, tax, and operational advisors to verify all material facts and assumptions.
+                </p>
+
+                <p>
+                    The business, financial performance, and market conditions described herein may change materially between the date of this document and any contemplated transaction close date. Forward-looking statements and projections are inherently speculative and subject to substantial risks and uncertainties. Actual results may differ materially from projections.
+                </p>
+
+                <p>
+                    This document is provided on an "as-is" basis and does not constitute an agreement, offer, or commitment to sell. The sellers reserve the right to modify or terminate any contemplated transaction at their sole discretion.
+                </p>
+
+                <p style="margin-top: 2rem; font-weight: 500;">
+                    <strong>Strictly Private & Confidential</strong>
+                </p>
+            </div>
+        </div>
+
+    </div>
+
+</body>
+</html>

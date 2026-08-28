@@ -24,6 +24,7 @@ class CIMState(TypedDict):
     listing_name: str
     asking_price: str
     logo_url: str
+    template_id: str
 
     # After ingest: categorised file lists
     pdf_files: list[FileItem]
