@@ -85,11 +85,13 @@ class CIMJob:
     """Represents one CIM generation job. Multiple SSE connections can subscribe."""
     job_id: str
     listing_id: int
-    status: str                          # "running" | "complete" | "error"
+    status: str                          # "running" | "complete" | "error" | "cancelled"
     events_buffer: list = field(default_factory=list)
     result_html: str = ""
     result_doc_id: Optional[int] = None
     completed_at: Optional[float] = None  # monotonic time when job finished
+    task: Optional[asyncio.Task] = None            # outer supervisor task (_run_job_pipeline)
+    pipeline_task: Optional[asyncio.Task] = None   # inner LangGraph ainvoke task
     _waiters: list = field(default_factory=list)  # asyncio.Queue per live connection
 
     def add_event(self, event: dict) -> None:
@@ -248,19 +250,21 @@ async def _run_job_pipeline(req: CIMRequest, job: CIMJob) -> None:
     })
 
     pipeline_task = asyncio.create_task(cim_graph.ainvoke(_build_initial_state(req)))
+    job.pipeline_task = pipeline_task   # exposed so /job/terminate can cancel it
 
     progress_steps = [
         (2, "Processing",  "Extracting and analysing content across all documents..."),
         (3, "Generating",  "Synthesising findings and structuring the investment narrative..."),
         (4, "Rendering",   "Composing the Confidential Information Memorandum..."),
     ]
-    for step, label, msg in progress_steps:
-        await asyncio.sleep(50)
-        if pipeline_task.done():
-            break
-        job.add_event({"step": step, "label": label, "message": msg, "status": "in_progress"})
 
     try:
+        for step, label, msg in progress_steps:
+            await asyncio.sleep(50)
+            if pipeline_task.done():
+                break
+            job.add_event({"step": step, "label": label, "message": msg, "status": "in_progress"})
+
         result = await pipeline_task
         html = result.get("cim_output", "")
         errors = [e.model_dump() for e in result.get("errors", [])]
@@ -291,6 +295,21 @@ async def _run_job_pipeline(req: CIMRequest, job: CIMJob) -> None:
             "━━━ PIPELINE COMPLETE  listing_id=%s  doc_id=%s  total=%.2fs  tokens=%d ━━━",
             job.listing_id, doc_id, total_elapsed, in_tok + out_tok,
         )
+    except asyncio.CancelledError:
+        total_elapsed = time.monotonic() - t_pipeline_start
+        log.info("━━━ PIPELINE CANCELLED  listing_id=%s  elapsed=%.2fs ━━━", job.listing_id, total_elapsed)
+        if not pipeline_task.done():
+            pipeline_task.cancel()
+        if job.status != "cancelled":   # /job/terminate may have already set this
+            job.status = "cancelled"
+            job.add_event({
+                "step": 0, "label": "Terminated",
+                "message": "Generation terminated by user.",
+                "status": "cancelled",
+            })
+        if db_row_id:
+            await db_log.log_error(db_row_id)
+        raise
     except Exception as exc:
         total_elapsed = time.monotonic() - t_pipeline_start
         log.error("━━━ PIPELINE ERROR  listing_id=%s  elapsed=%.2fs  %s ━━━", job.listing_id, total_elapsed, exc)
@@ -319,7 +338,7 @@ async def _fan_out_stream(job: CIMJob):
             try:
                 event = await asyncio.wait_for(q.get(), timeout=120)
                 yield _sse(event)
-                if event.get("status") in ("complete", "error"):
+                if event.get("status") in ("complete", "error", "cancelled"):
                     break
             except asyncio.TimeoutError:
                 yield ": heartbeat\n\n"   # keep the connection alive
@@ -358,16 +377,20 @@ async def generate_cim_stream(req: CIMRequest):
     """
     Streams SSE progress events while running the CIM pipeline.
 
-    - If a job already exists for req.listing_id: reconnects (fan-out) to the
-      existing pipeline without restarting it.  All past events are replayed
-      immediately so the browser catches up.
+    - If a job is already RUNNING for req.listing_id: reconnects (fan-out) to
+      the existing pipeline without restarting it — avoids double-billing an
+      in-flight generation. All past events are replayed so the browser
+      catches up.
+    - If a job exists but is complete/error/cancelled: it's replaced by a new
+      job (a finished job has nothing left to stream, and the caller may have
+      picked a different template — never silently replay a stale result).
     - Otherwise: starts a new background pipeline task and streams its events.
     """
     listing_id = req.listing_id
 
-    if listing_id and listing_id in _jobs:
+    if listing_id and listing_id in _jobs and _jobs[listing_id].status == "running":
         job = _jobs[listing_id]
-        log.info("Reconnecting to existing job — listing_id=%s status=%s", listing_id, job.status)
+        log.info("Reconnecting to existing running job — listing_id=%s", listing_id)
         return StreamingResponse(
             _fan_out_stream(job),
             media_type="text/event-stream",
@@ -382,13 +405,41 @@ async def generate_cim_stream(req: CIMRequest):
         log.info("New CIM job — listing_id=%s job_id=%s", listing_id, job_id)
 
     # Pipeline runs independently — survives browser disconnect
-    asyncio.create_task(_run_job_pipeline(req, job))
+    job.task = asyncio.create_task(_run_job_pipeline(req, job))
 
     return StreamingResponse(
         _fan_out_stream(job),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@app.post("/job/terminate/{listing_id}")
+async def job_terminate(listing_id: int):
+    """
+    Cancels a running CIM job on user request. Aborts the in-flight LangGraph
+    pipeline (including any Claude API call in progress) immediately.
+    No-op if the job isn't currently "running" — safe to call more than once.
+    """
+    job = _jobs.get(listing_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="No job found for this listing")
+    if job.status != "running":
+        return JSONResponse({"success": False, "status": job.status, "message": "Job is not running"})
+
+    log.info("Job termination requested — listing_id=%s job_id=%s", listing_id, job.job_id)
+    if job.pipeline_task and not job.pipeline_task.done():
+        job.pipeline_task.cancel()
+    if job.task and not job.task.done():
+        job.task.cancel()
+
+    job.status = "cancelled"
+    job.add_event({
+        "step": 0, "label": "Terminated",
+        "message": "Generation terminated by user.",
+        "status": "cancelled",
+    })
+    return JSONResponse({"success": True, "status": "cancelled"})
 
 
 async def _run_pipeline(req: CIMRequest) -> dict:

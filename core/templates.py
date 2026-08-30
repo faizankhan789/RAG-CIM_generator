@@ -54,7 +54,11 @@ TEMPLATES: dict[str, dict[str, Any]] = {
             "Generous whitespace — increase section padding by ~50% vs a typical CIM. "
             "Color is used sparingly: only for the accent underline beneath headings, small "
             "eyebrow labels, and one highlight box per section — everything else stays black/white/grey. "
-            "Typography carries the hierarchy: use weight and size contrast rather than color or ornament."
+            "Typography carries the hierarchy: use weight and size contrast rather than color or ornament. "
+            "Charts: flat single-accent-color fills only, never a gradient — bar fills in accent, donut "
+            "arcs differentiated by accent/grey/black rather than multiple hues. Icons: 1px hairline "
+            "stroke-width, used only in the stat-strip and Executive Summary checks — leave the section "
+            "footer as plain text, no lock icon."
         ),
         "cover_override": (
             "REPLACE the 'PAGE 1 — COVER' spec above with this — the defining trait of this template is "
@@ -108,7 +112,10 @@ TEMPLATES: dict[str, dict[str, Any]] = {
             "Open each major section with a large pull-quote or stat rendered in oversized italic serif type "
             "with a thick 6px accent-colored left border. "
             "Use thick horizontal accent-colored rule dividers (4-6px) between major blocks, not thin lines. "
-            "Warm off-white page background throughout, near-black text."
+            "Warm off-white page background throughout, near-black text. "
+            "Charts: styled like newspaper data-journalism graphics — thin 1px strokes, serif value/period "
+            "labels, muted ink tones, no gradients or drop shadows. Icons: simple restrained line-art matching "
+            "the masthead's editorial tone, never bright or playful."
         ),
         "cover_override": (
             "REPLACE the 'PAGE 1 — COVER' spec above with a newspaper-masthead layout — the defining trait "
@@ -163,7 +170,11 @@ TEMPLATES: dict[str, dict[str, Any]] = {
             "not a full-width bar) between subsections. Generous margins (padding 4rem+ on section bodies). "
             "No bright saturated colors anywhere — palette stays within primary/accent/light/mid. "
             "No card drop-shadows heavier than a subtle 1px border; avoid playful rounded corners — use "
-            "sharp or minimally rounded (2-4px) corners throughout."
+            "sharp or minimally rounded (2-4px) corners throughout. "
+            "Charts: single muted gold-tone strokes/fills only, never a multi-hue palette — differentiate "
+            "donut segments by opacity (100% / 60% / 35% of the gold accent) rather than by hue. Icons: thin "
+            "1px gold stroke, used only in the stat-strip and the section-footer lock mark — never as bullet "
+            "markers (keep bullets as plain gold dots, per the restraint rule above)."
         ),
         "cover_override": (
             "MODIFY the 'PAGE 1 — COVER' spec above (this template keeps the centered layout, but changes the "
@@ -215,7 +226,11 @@ TEMPLATES: dict[str, dict[str, Any]] = {
             "Cards throughout use rounded corners (16px) and soft colored shadows (not grey) tinted toward "
             "the accent color. "
             "Favor dense card-grid layouts (card-grid-2 / card-grid-3) over long narrative paragraphs where "
-            "the data supports it — this template is stat-forward and dashboard-like."
+            "the data supports it — this template is stat-forward and dashboard-like. "
+            "Charts: gradient fills (accent→teal, via <linearGradient> in <defs>) on bars and the primary "
+            "donut segment, rounded bar corners (rx 6-8px), soft accent-tinted glow — matches the glass-"
+            "morphism stat cards. Icons: bolder 2px stroke-width, each sitting inside a small filled circular "
+            "accent-tinted badge rather than bare on the background."
         ),
         "cover_override": (
             "REPLACE the 'PAGE 1 — COVER' spec above with a two-column dashboard layout — the defining trait "

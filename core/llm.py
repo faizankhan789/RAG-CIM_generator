@@ -292,26 +292,127 @@ For each section body, pick component(s) from this library based on data volume 
 Do NOT force a fixed layout — adapt to what the data actually supports.
 
 COMPONENT LIBRARY:
-▸ [stat-strip]      Horizontal KPI cards on dark background. Use when 3+ numeric metrics exist.
+▸ [stat-strip]      Horizontal KPI cards on dark background, each topped with a matching ICON SYSTEM glyph. Use when 3+ numeric metrics exist.
 ▸ [narrative-pull]  Large pull-quote paragraph with accent left-border. For text-rich, metric-light sections.
 ▸ [two-col-60-40]   Left 60% narrative + right 40% highlight box. Good for overview/intro sections.
 ▸ [two-col-50-50]   Equal columns. Use when two equally weighted topics exist side by side.
 ▸ [data-table]      Financial or comparison table. Use for any tabular or multi-period financial data.
+▸ [chart-bar]       Inline SVG bar chart for a trend across 2+ periods (e.g. revenue/EBITDA by year). See SVG CHART LIBRARY below.
+▸ [chart-donut]     Inline SVG donut chart for a composition/mix breakdown (e.g. revenue by segment). See SVG CHART LIBRARY below.
 ▸ [card-grid-2]     2-column cards. Use for 2-4 equal items (team members, features, locations).
 ▸ [card-grid-3]     3-column cards. Use for 5+ equal items.
 ▸ [timeline]        Numbered vertical steps. Use for growth plans, milestones, roadmap, history.
 ▸ [swot-grid]       2×2 quadrant. Only for SWOT section.
 ▸ [image-hero]      Full-width image, max-height 480px. Use for best property/exterior/product shot.
 ▸ [image-mosaic]    2-3 column image gallery. Use when 3+ contextually relevant images exist.
-▸ [bullet-list]     Styled accent-dot bullet points. Use for lists of 5+ items without card structure.
+▸ [bullet-list]     Styled accent-dot bullet points (or the matching ICON SYSTEM glyph in place of the dot for facilities/amenities/product lists). Use for lists of 5+ items without card structure.
 
 SELECTION RULES:
 - Sparse data (1-3 points) → [narrative-pull] or [two-col-60-40]
 - Rich financial data → [data-table] above or below a [stat-strip]
+- Trend across 2+ periods (revenue/EBITDA by year) → [chart-bar] beside its [data-table]; a composition/mix breakdown → [chart-donut] — the chart supplements the table, never replaces it
 - Team section → [card-grid-2] (≤4 people) or [card-grid-3] (5+)
 - Growth/strategy/roadmap → [timeline]
 - Never use identical layout for two adjacent sections — vary for visual rhythm
 - Combine freely: e.g. [stat-strip] + [two-col-60-40] + [data-table] all in one section
+
+═══════════════════════════════════════════════
+STEP 2c — ICON SYSTEM
+═══════════════════════════════════════════════
+A fixed set of inline monoline SVG icons. Copy the markup below VERBATIM (only the wrapping
+<svg> tag's width/height/color may change, via CSS) — never redraw a path or invent a new
+icon shape; hand-drawn path data renders broken or illegible at this scale.
+
+Icon usage is DELIBERATE, not decorative. Use icons ONLY in these places:
+1. Each [stat-strip] card — one icon above/beside the value (pick the closest semantic match
+   below; skip the icon entirely rather than force a wrong one).
+2. Facilities/amenities/product [bullet-list] items — icon replaces the accent-dot bullet.
+   CRITICAL: a bullet-list is either ALL icon-led or ALL dot-led, never mixed on the same
+   list. If any li in a [bullet-list] carries an icon <svg>, do NOT also write a
+   `::before` content rule for that list's li — the icon IS the marker. Only add
+   `.bullet-list li::before { content:'▸' }` for a list that has no icons at all. Writing
+   both on the same li renders two competing markers side by side, out of alignment with
+   each other — this is a common, easy-to-miss bug; check every [bullet-list] block for it.
+3. Executive Summary / Investment Highlights list items — the `check` icon replaces the dot.
+4. The SECTION FOOTER (see below) — the `lock` icon beside "STRICTLY PRIVATE & CONFIDENTIAL",
+   only where the active template's style rules don't forbid extra ornamentation.
+Do NOT scatter icons through body paragraphs, table cells, or section header bands — that
+reads as a generic template, not a bank-grade CIM.
+
+Shared attributes on every icon: viewBox="0 0 24 24" fill="none" stroke="currentColor"
+stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="22" height="22".
+Set color via the CSS `color` property on the icon or a wrapper so `currentColor` inherits it.
+Icons and charts are SEPARATE systems — never mix them. Copy each icon's inner shapes
+(rect/line/circle/path/polyline/polygon) verbatim from the list below; never invent a new
+tag name (e.g. `<calendar>` is not a real SVG element), and never paste SVG CHART LIBRARY
+syntax (stroke-dasharray, stroke-dashoffset, donut arcs) into an icon glyph.
+
+- check (highlights/checklists):
+  <svg ...><polyline points="4 12 9 17 20 6"/></svg>
+- trend-up (growth, revenue/margin growth):
+  <svg ...><polyline points="3 17 9 11 13 15 21 7"/><polyline points="14 7 21 7 21 14"/></svg>
+- dollar (revenue/financial KPIs):
+  <svg ...><line x1="12" y1="2" x2="12" y2="22"/><path d="M15.5 8c0-1.7-1.6-3-3.5-3s-3.5 1.3-3.5 3 1.6 2.4 3.5 2.8 3.5 1.1 3.5 2.7-1.6 3-3.5 3-3.5-1.3-3.5-3"/></svg>
+- building (properties/facilities/locations):
+  <svg ...><rect x="4" y="3" width="16" height="18" rx="1"/><line x1="9" y1="8" x2="9.01" y2="8"/><line x1="15" y1="8" x2="15.01" y2="8"/><line x1="9" y1="13" x2="9.01" y2="13"/><line x1="15" y1="13" x2="15.01" y2="13"/><line x1="10" y1="21" x2="10" y2="17"/><line x1="14" y1="21" x2="14" y2="17"/></svg>
+- users (team/HR/management):
+  <svg ...><circle cx="9" cy="8" r="3"/><path d="M4 20c0-3 2.5-5 5-5s5 2 5 5"/><circle cx="17" cy="9" r="2.5"/><path d="M15.5 20c.2-2.2 1.7-4 3.8-4.4"/></svg>
+- shield (legal/compliance/risk):
+  <svg ...><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z"/></svg>
+- calendar (dates/timeline/growth plan):
+  <svg ...><rect x="3" y="5" width="18" height="16" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="3" x2="8" y2="7"/><line x1="16" y1="3" x2="16" y2="7"/></svg>
+- map-pin (location):
+  <svg ...><path d="M12 21s7-6.5 7-11a7 7 0 1 0-14 0c0 4.5 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
+- briefcase (operations/products/services):
+  <svg ...><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="3" y1="13" x2="21" y2="13"/></svg>
+- lock (confidential/footer):
+  <svg ...><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 1 1 8 0v4"/></svg>
+- star (awards/reputation/quality):
+  <svg ...><polygon points="12 2 15 9 22 9 16.5 13.5 18.5 21 12 16.5 5.5 21 7.5 13.5 2 9 9 9"/></svg>
+
+═══════════════════════════════════════════════
+STEP 2d — SVG CHART LIBRARY (real, data-accurate charts)
+═══════════════════════════════════════════════
+Whenever a section has 2+ periods of the same metric (e.g. 3 years of revenue) OR a
+breakdown into 2+ parts of a whole (e.g. revenue by segment), render it as an inline SVG
+chart alongside its [data-table] — never fabricate a chart for data that isn't in the
+source, and never let the chart be the ONLY place the exact numbers appear. Compute every
+coordinate below from the real extracted numbers — never eyeball or approximate proportions.
+Zero external chart libraries, zero <canvas>, zero JS — pure inline <svg>.
+
+▸ [chart-bar] — trend across periods:
+  - Fixed box: viewBox="0 0 500 260". Baseline at y=220. Max bar height 180px.
+  - For N bars: barWidth = (440/N)*0.6, x_i = 40 + i*(440/N) (i = 0-indexed).
+  - For value v and series max `max`: h_i = (v/max)*180, bar y_i = 220 - h_i.
+  - Per bar: <rect x="{x_i}" y="{y_i}" width="{barWidth}" height="{h_i}" rx="4" fill="[accent]"/>
+    value label above: <text x="{x_i+barWidth/2}" y="{y_i-8}" text-anchor="middle">{value}</text>
+    period label below baseline: <text x="{x_i+barWidth/2}" y="242" text-anchor="middle">{period}</text>
+  - Baseline: <line x1="30" y1="220" x2="470" y2="220" stroke="[mid]" stroke-width="1"/>
+  - Optional: render the most recent period's bar in accent and prior periods in mid (at
+    reduced opacity) to draw the eye to the latest figure.
+
+▸ [chart-donut] — composition/mix:
+  - Fixed size: viewBox="0 0 200 200". Circle center (100,100), r=70, stroke-width=28, fill="none".
+  - Circumference C = 2 × π × 70 ≈ 439.8 — use this constant.
+  - For each segment (in order) with percentage p: stroke-dasharray="{(p/100)*C} {C-(p/100)*C}",
+    stroke-dashoffset = -(sum of all PRIOR segments' % ) / 100 × C. Wrap all segment <circle>
+    elements in one <g transform="rotate(-90 100 100)"> so the first segment starts at 12 o'clock.
+  - Worked example, 3 segments at 62.7% / 34.0% / 3.3% (C≈439.8):
+    <g transform="rotate(-90 100 100)">
+      <circle cx="100" cy="100" r="70" fill="none" stroke-width="28" stroke="[accent]" stroke-dasharray="275.8 164.0" stroke-dashoffset="0"/>
+      <circle cx="100" cy="100" r="70" fill="none" stroke-width="28" stroke="[mid]" stroke-dasharray="149.5 290.3" stroke-dashoffset="-275.8"/>
+      <circle cx="100" cy="100" r="70" fill="none" stroke-width="28" stroke="[primary]" stroke-dasharray="14.5 425.3" stroke-dashoffset="-425.3"/>
+    </g>
+  - Center label: <text x="100" y="100" text-anchor="middle" dominant-baseline="middle"> showing
+    the single most important % or total.
+  - A legend beside/below the donut: one colored dot + label + percentage per segment, in the
+    same order and same colors as the arcs.
+  - Percentages MUST sum to ~100% and MUST be derived from real source figures (compute from
+    raw revenue amounts if the source gives amounts, not %) — never invented splits.
+
+Respect the active template's fill/style rules (STEP 2 palette + any MANDATORY TEMPLATE
+OVERRIDE below) when rendering charts and icons: flat single-color fills where a template
+forbids gradients/shadows, gradient fills where a template calls for them, etc.
 
 ═══════════════════════════════════════════════
 STEP 3 — BUILD THE DOCUMENT
@@ -319,7 +420,7 @@ STEP 3 — BUILD THE DOCUMENT
 
 CRITICAL DATA RULES:
 - Copy ALL financial figures, percentages, dates EXACTLY as they appear in the source data — never round, abbreviate, or infer.
-- Include ONLY sections where you have actual data — skip sections with no content.
+- Include ONLY sections where you have actual data — skip sections with no content. If you skip a section, you MUST also remove its entry from the TABLE OF CONTENTS and renumber the remaining Roman numerals — a TOC entry with no matching rendered section is a bug.
 - Never invent metrics, names, or figures not present in the source data.
 - STRICT STRUCTURE: Generate ONLY sections I through X as defined above. Do NOT create any section, heading, or topic outside this list. No bonus sections, no summaries, no additional pages beyond Cover, TOC, sections I–X, and Disclaimer.
 - IGNORE internal CRM metadata: do NOT include CRM IDs, usernames, system dates, listing status, campaign IDs, NDA flags, or any other internal admin fields in the document. These are system fields, not business content.
@@ -364,13 +465,23 @@ Clean, typographically elegant. Full-page feel (min-height:700px, light backgrou
 - Each section: flex row — Roman numeral (accent color, bold, monospace, min-width:3rem), section title (primary, medium weight), dotted leader line flex-grow, page anchor arrow → at right
 - Hover state: background tint, cursor pointer
 - Subtle section groupings if many sections
+- MANDATORY 1:1 MATCH: build the TOC LAST, after you know which sections you actually
+  rendered. A section with no real data is skipped entirely per the "Include ONLY
+  sections where you have actual data" rule below — when that happens, its TOC entry
+  MUST be removed too and the remaining Roman numerals renumbered (I, II, III... with no
+  gap). Never leave a TOC entry (e.g. "Appendix") that has no matching section-header/
+  section-title actually rendered in the body — every heading promised in the TOC must
+  be covered by a real section, and vice versa.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━
 KEY METRICS STRIP
 ━━━━━━━━━━━━━━━━━━━━━━━━
 Immediately after TOC — a full-width horizontal strip of stat cards (3–6 cards):
 - Background: primary color
-- Each card: centered, white label (small, uppercase, muted), large white value (bold, 2rem+), optional unit label
+- Each card: a matching ICON SYSTEM glyph above the label (dollar for revenue/EBITDA, trend-up
+  for growth/margin %, building for keys/units/locations, users for headcount, star for rating
+  — pick the closest match, skip the icon rather than force a wrong one), centered, white label
+  (small, uppercase, muted), large white value (bold, 2rem+), optional unit label
 - Cards separated by thin vertical lines
 - Only use metrics actually present in the data
 
@@ -507,7 +618,8 @@ Use the most appropriate layout for the content type:
 
 • EXECUTIVE SUMMARY / INVESTMENT HIGHLIGHTS:
   - Opening paragraph: large pull-quote style (1.15rem, line-height 1.8, border-left 4px accent)
-  - Bullet highlights as icon-less styled list items with accent left-dot
+  - Bullet highlights: styled list items, each prefixed by the `check` icon (see ICON SYSTEM)
+    in accent color — not a plain text dot
 
 • FINANCIAL TABLES:
   - Full-width table, thead: primary bg, white text
@@ -515,6 +627,9 @@ Use the most appropriate layout for the content type:
   - Numbers: right-aligned, monospace font
   - Total/summary rows: bold, accent-tinted background
   - Currency labels: muted, smaller
+  - Pair with a [chart-bar] (revenue/EBITDA trend) and/or [chart-donut] (revenue mix) per the
+    SVG CHART LIBRARY (STEP 2d) whenever 2+ comparable data points exist — the chart supplements
+    the table, it never replaces it
 
 • IMAGE PLACEMENT (<!-- IMG:N -->):
   - Hero/exterior/product shots: full-width poster format (max-height:480px, object-fit:cover, border-radius:12px, box-shadow:0 8px 32px rgba(0,0,0,0.18))
@@ -543,6 +658,20 @@ Use the most appropriate layout for the content type:
 • GROWTH & STRATEGY / INVESTMENT THESIS:
   - Numbered steps or milestone timeline with accent-colored step indicators
   - Each step: number circle (accent bg, white text), title bold, description muted
+
+━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION FOOTER (every content section, sections I–X)
+━━━━━━━━━━━━━━━━━━━━━━━━
+Every section-N div ends with a slim full-width footer bar (padding 0.75rem 3rem, 1px top
+border in accent or mid color, background matching the section body — light, not dark):
+- Left: business name, small, muted (mid color)
+- Center: the `lock` icon (see ICON SYSTEM) + "STRICTLY PRIVATE & CONFIDENTIAL" in small-caps,
+  muted — omit the icon (keep the text) if the active template's style rules forbid extra
+  ornamentation
+- Right: the section's Roman numeral + title, small, muted (e.g. "III. Financial Information")
+- One footer per section is enough — there is no true pagination in scrollable HTML, so do not
+  repeat it more than once per section-N div
+- TEXT CONTRAST rules (below, in TECHNICAL REQUIREMENTS) still apply here — muted must never mean illegible
 
 ━━━━━━━━━━━━━━━━━━━━━━━━
 LAST PAGE — DISCLAIMER
