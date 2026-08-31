@@ -34,7 +34,7 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 from urllib.parse import urlparse
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse, HTMLResponse
 import uvicorn
@@ -43,6 +43,7 @@ from pydantic import BaseModel
 from core.listing_context import build_listing_xml
 from core import db_log
 from core.llm import MODEL, reset_token_counters, get_token_counts
+from core.pdf_style_extractor import NoExtractableTextError, extract_style_profile
 from core.templates import TEMPLATES
 from graph import cim_graph
 
@@ -74,6 +75,7 @@ class CIMRequest(BaseModel):
     username: str = ""       # CRM username who triggered the request
     crm_url: str = ""        # CRM instance URL (for multi-tenant tracking)
     template_id: str = "classic"  # Selected design template (see core/templates.py)
+    custom_template: dict[str, Any] | None = None  # Extracted from an uploaded PDF, see core/pdf_style_extractor.py
 
 
 # ---------------------------------------------------------------------------
@@ -199,6 +201,7 @@ def _build_initial_state(req: CIMRequest) -> dict:
         "asking_price": asking_price,
         "logo_url": req.logo or "",
         "template_id": req.template_id or "classic",
+        "custom_template": req.custom_template,
         "pdf_files": [],
         "spreadsheet_files": [],
         "image_files": [],
@@ -472,6 +475,20 @@ async def generate_cim_json(req: CIMRequest):
     html = final_state.get("cim_output", "")
     errors = [e.model_dump() for e in final_state.get("errors", [])]
     return JSONResponse(content={"html": html, "errors": errors})
+
+
+@app.post("/template/upload")
+async def template_upload(file: UploadFile = File(...)):
+    """Extract a CIM template style (colors/fonts/layout) from an uploaded PDF. No LLM."""
+    is_pdf = (file.content_type == "application/pdf") or (file.filename or "").lower().endswith(".pdf")
+    if not is_pdf:
+        raise HTTPException(status_code=400, detail="Only PDF files are supported.")
+    pdf_bytes = await file.read()
+    try:
+        template, warnings = extract_style_profile(pdf_bytes)
+    except NoExtractableTextError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return JSONResponse(content={"template": template, "warnings": warnings})
 
 
 @app.get("/template-preview/{template_id}")

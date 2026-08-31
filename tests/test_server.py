@@ -389,3 +389,53 @@ class TestGenerateCimStream:
         complete = next(e for e in events if e.get("status") == "complete")
         # doc_id absent or None — browser JS handles both safely
         assert complete.get("doc_id") is None or "doc_id" not in complete
+
+
+# ─── 8. custom_template wiring (uploaded PDF templates) ─────────────────────
+
+def test_build_initial_state_carries_custom_template():
+    req = CIMRequest(
+        listing_data=MINIMAL_LISTING,
+        custom_template={"id": "custom-upload", "name": "My Upload"},
+    )
+    state = _build_initial_state(req)
+    assert state["custom_template"] == {"id": "custom-upload", "name": "My Upload"}
+
+
+def test_build_initial_state_defaults_custom_template_to_none():
+    req = CIMRequest(listing_data=MINIMAL_LISTING)
+    state = _build_initial_state(req)
+    assert state["custom_template"] is None
+
+
+# ─── 9. /template/upload endpoint ────────────────────────────────────────────
+
+class TestTemplateUpload:
+
+    def test_returns_template_and_warnings(self, client):
+        from tests.pdf_helpers import make_text_pdf
+        pdf_bytes = make_text_pdf()
+        response = client.post(
+            "/template/upload",
+            files={"file": ("template.pdf", pdf_bytes, "application/pdf")},
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["template"]["id"] == "custom-upload"
+        assert isinstance(body["warnings"], list)
+
+    def test_rejects_non_pdf(self, client):
+        response = client.post(
+            "/template/upload",
+            files={"file": ("notes.txt", b"just some text", "text/plain")},
+        )
+        assert response.status_code == 400
+
+    def test_rejects_no_text_layer_pdf(self, client):
+        from tests.pdf_helpers import make_no_text_pdf
+        pdf_bytes = make_no_text_pdf()
+        response = client.post(
+            "/template/upload",
+            files={"file": ("scanned.pdf", pdf_bytes, "application/pdf")},
+        )
+        assert response.status_code == 422

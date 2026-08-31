@@ -25,6 +25,7 @@ class CIMState(TypedDict):
     asking_price: str
     logo_url: str
     template_id: str
+    custom_template: dict | None  # Extracted from an uploaded PDF, see core/pdf_style_extractor.py
 
     # After ingest: categorised file lists
     pdf_files: list[FileItem]

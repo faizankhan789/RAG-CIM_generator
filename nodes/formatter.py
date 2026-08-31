@@ -85,6 +85,7 @@ async def formatter_node(state: CIMState) -> dict:
     asking_price: str = state.get("asking_price", "")
     logo_url: str = state.get("logo_url", "")
     template_id: str = state.get("template_id", "classic")
+    custom_template: dict | None = state.get("custom_template")
 
     if not all_findings and not listing_xml:
         log.error("Formatter: no findings and no listing context — cannot generate CIM")
@@ -106,6 +107,7 @@ async def formatter_node(state: CIMState) -> dict:
         logo_b64=logo_b64, logo_mime=logo_mime,
         brand_primary=brand_primary, brand_accent=brand_accent,
         template_id=template_id,
+        custom_template=custom_template,
     )
     log.info("Formatter: done — %.1f KB", len(html) / 1024)
     return {"cim_output": html}

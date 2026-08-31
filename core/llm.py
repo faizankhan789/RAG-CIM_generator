@@ -339,8 +339,20 @@ Icon usage is DELIBERATE, not decorative. Use icons ONLY in these places:
 Do NOT scatter icons through body paragraphs, table cells, or section header bands — that
 reads as a generic template, not a bank-grade CIM.
 
-Shared attributes on every icon: viewBox="0 0 24 24" fill="none" stroke="currentColor"
+Shared attributes on every icon — these MUST be literal attributes on the <svg> tag itself,
+every single time, with NO exceptions: viewBox="0 0 24 24" fill="none" stroke="currentColor"
 stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="22" height="22".
+A CSS class (e.g. `.metric-icon`, `.highlight-list li svg`) may RESIZE or RECOLOR the icon on
+top of these, but never OMIT the width/height in the first place — a bare <svg> with no
+explicit size defaults to the browser's native replaced-element size of 300×150px. This is a
+common, easy-to-miss bug: if you write a CSS rule for an icon-bearing selector that only sets
+layout properties (e.g. `flex-shrink:0`, `margin-top:...`) and forgets `width`/`height`, the
+icon silently balloons to 300×150px, blowing that row/list/section far wider and taller than
+intended — this is exactly how a checklist of small checkmarks turns into a page of giant
+icons. Before finishing, check every single CSS rule you wrote for an icon `<svg>` selector
+(stat-strip, bullet-list, highlight-list, footer lock icon, etc.) and confirm it either sets
+its own `width`/`height` in px or simply leaves sizing to the inline attributes above — never
+leave an icon-targeting rule with layout properties only.
 Set color via the CSS `color` property on the icon or a wrapper so `currentColor` inherits it.
 Icons and charts are SEPARATE systems — never mix them. Copy each icon's inner shapes
 (rect/line/circle/path/polyline/polygon) verbatim from the list below; never invent a new
@@ -379,6 +391,10 @@ chart alongside its [data-table] — never fabricate a chart for data that isn't
 source, and never let the chart be the ONLY place the exact numbers appear. Compute every
 coordinate below from the real extracted numbers — never eyeball or approximate proportions.
 Zero external chart libraries, zero <canvas>, zero JS — pure inline <svg>.
+Every chart's outer <svg> tag (same rule as ICON SYSTEM, STEP 2c) needs explicit sizing —
+either a `width`/`height` attribute or a CSS rule with `width`/`height` (e.g. `width:100%;
+height:auto;` so it fills its column) — an <svg> with only a `viewBox` and no `width`/`height`
+anywhere still defaults to the browser's native 300×150px, distorting the chart.
 
 ▸ [chart-bar] — trend across periods:
   - Fixed box: viewBox="0 0 500 260". Baseline at y=220. Max bar height 180px.
@@ -442,18 +458,18 @@ PAGE 1 — COVER
 Full-page cover (min-height:1080px). Structure:
 - Background: diagonal or radial gradient from primary → mid (dark, rich)
 - Decorative geometric shapes: large semi-transparent circles or diagonal bands in accent color, low opacity (0.08–0.15), absolutely positioned — creates depth without clutter
-- Top bar: MUST use `display:flex; justify-content:space-between; align-items:center; width:100%`. LEFT side (flex-start): <!-- LOGO --> placeholder (if logo provided) OR empty div. RIGHT side (flex-end): "CONFIDENTIAL INFORMATION MEMORANDUM" in small-caps tracking-widest, accent color, text-align:right. NEVER center either element — logo is strictly left, CIM title is strictly right. Subtle top border in accent color across full width.
+- Top bar: MUST use `display:flex; justify-content:space-between; align-items:center; width:100%; position:relative; z-index:5`. LEFT side (flex-start): <!-- LOGO --> placeholder (if logo provided) OR empty div. RIGHT side (flex-end): "CONFIDENTIAL INFORMATION MEMORANDUM" in small-caps tracking-widest, accent color, text-align:right. NEVER center either element — logo is strictly left, CIM title is strictly right. Subtle top border in accent color across full width. The top bar's `z-index:5` MUST be higher than any decorative background element on the cover (geometric shapes, gradients, ornamental corner brackets/frames per a template override) — a logo or title rendered behind, touching, or crossing through a decorative line/shape is a critical bug. If this template's cover calls for an ornamental corner frame or brackets, keep them short and inset far enough from the top-left corner (at least the cover's own padding, e.g. 3rem) that they never reach into the top bar's logo/title area.
 - CENTER BLOCK (vertically centered, text-align:center, align-items:center — ALL content MUST be centered horizontally):
     • Industry badge pill (e.g. "RESTAURANT & FOOD SERVICE") — accent background, white text, rounded-full, uppercase, letter-spacing, margin:0 auto
     • Business name: massive (4.5rem), white, bold, line-height 1.1, max 2 lines, text-align:center
     • Tasteful thin horizontal rule in accent color below name, width:80px, margin:0 auto
     • Tagline or location if available — rgba(255,255,255,0.85) (NEVER lower opacity — must stay clearly readable against the dark cover background), italic, 1.2rem, text-align:center
     • Asking price block: large accent-colored chip — "Asking Price" label above, price value bold 2.5rem white, centered
-- BOTTOM BAR: dark translucent band across full width:
+- BOTTOM BAR: dark translucent band across full width, at `z-index:2` — same clearance rule as the top bar: this z-index MUST be higher than any decorative background element on the cover, and if this template's cover calls for an ornamental corner frame or brackets, they must stay clear not just of the top bar but of this bottom bar too. The bar's actual rendered height (padding + line-height, typically 50–60px) is almost always taller than a small fixed corner-bracket inset (e.g. 24px) — a frame/bracket inset sized only for the top corners will sit INSIDE the bottom bar's footprint and visibly collide with it. Either size the frame's bottom edge and bottom corner brackets to clear the bottom bar's full rendered height (not the same fixed inset used for the top/left/right), or draw the frame so its perimeter stops above the bottom bar entirely. A footer bar overlapping a decorative corner line is the same class of critical bug as a logo overlapping one:
     • Left: "Prepared exclusively for prospective acquirers" — muted italic
     • Center: current date
     • Right: "STRICTLY PRIVATE & CONFIDENTIAL"
-- If images are available AND contextually relevant (property, storefront, food, team — NOT random objects, dice, icons, or unrelated images): use <!-- IMG:1 --> as a CSS background on the cover div. NEVER place it as a <figure> or <img> above the top bar. Implementation: the cover div must have position:relative; overflow:hidden. Inside it, as the very first child, place: <div style="position:absolute;top:0;right:0;bottom:0;left:0;z-index:0;"><img src="..." style="width:100%;height:100%;opacity:0.25;"/></div> followed by a <div style="position:absolute;top:0;right:0;bottom:0;left:0;background:rgba(0,0,0,0.50);z-index:1;"></div>. All cover content (top bar, center block, bottom bar) at z-index:2. If the image is not contextually relevant (e.g. dice, generic clipart, icons), skip it entirely — use no image rather than a wrong one.
+- If images are available AND contextually relevant (property, storefront, food, team — NOT random objects, dice, icons, or unrelated images): use <!-- IMG:1 --> as a CSS background on the cover div. NEVER place it as a <figure> or <img> above the top bar. Implementation: the cover div must have position:relative; overflow:hidden. Inside it, as the very first child, place: <div style="position:absolute;top:0;right:0;bottom:0;left:0;z-index:0;"><img src="..." style="width:100%;height:100%;opacity:0.25;"/></div> followed by a <div style="position:absolute;top:0;right:0;bottom:0;left:0;background:rgba(0,0,0,0.50);z-index:1;"></div>. All cover content sits above both of those: center block and bottom bar at z-index:2, and the top bar at its own z-index:5 as specified above (the top bar's z-index is never lowered to 2 just because an image/overlay is present — 5 stays reserved for it alone so it also clears any decorative shapes, which is why they must never share or exceed it). If the image is not contextually relevant (e.g. dice, generic clipart, icons), skip it entirely — use no image rather than a wrong one.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━
 PAGE 2 — TABLE OF CONTENTS
@@ -703,6 +719,8 @@ TECHNICAL REQUIREMENTS
 - Custom bullet markers: if a ul/li uses a ::before for a styled bullet/dot, you MUST also set list-style:none on that ul/li — otherwise the browser's default bullet renders alongside it, producing a duplicated "• •" marker.
 - TEXT CONTRAST (applies everywhere, every template): any text on a colored or dark background must maintain at least a 4.5:1 contrast ratio and must be immediately, plainly readable — never a low-opacity "watermark" effect. On dark backgrounds, text opacity must never go below 0.85 (e.g. rgba(255,255,255,0.85), not 0.6 or 0.7). Never set a text color whose hue/brightness is close to its background — if in doubt, use a plain solid light color (near-white or the palette's accent) rather than a translucent one.
 - CSS SPECIFICITY TRAP (a common cause of invisible text — check this every time you write a dark-background block): if you have a global element selector like `p { color: #1a1a1a; }` or `li { color: ... }` for the document's default light-background body text, that rule directly targets every matching tag and OVERRIDES any color merely inherited from a dark-background ancestor (e.g. `.disclaimer-page { color: white; }` does NOT make its `<p>` children white if a global `p { color: #1a1a1a }` rule exists — the direct match always wins over inheritance). Whenever you place text inside a dark/colored block, you MUST set that block's text color with a selector that directly targets the actual text tags (e.g. `.disclaimer-text p { color: ... }`, not just `.disclaimer-text { color: ... }`) — never assume inheritance will apply.
+- SVG ICON SIZING (a common, easy-to-miss bug across every template — see ICON SYSTEM, STEP 2c): every icon `<svg>` tag must carry literal `width`/`height` attributes. A CSS rule for an icon selector that only sets layout properties (`flex-shrink`, `margin`, etc.) and forgets `width`/`height` leaves the browser's native SVG default size of 300×150px, ballooning that row/list/section far wider and taller than intended. Check every icon-targeting CSS rule before finishing.
+- LOGO / COVER LAYERING: the cover top bar holding the <!-- LOGO --> marker must render at a higher z-index than any decorative background shape, corner frame, or bracket on the cover (see PAGE 1 — COVER for the exact z-index/inset rules) — a logo overlapping or crossing through a decorative line is a critical bug. The SAME rule applies to the bottom bar (date/confidentiality row): a decorative corner frame or bracket sized to clear the top corners is not automatically clear of the bottom corners — check the bottom bar's own rendered height against the frame's bottom inset separately.
 
 Return ONLY the complete HTML document starting with <!DOCTYPE html>. No explanation, no markdown fences."""
 
@@ -726,6 +744,11 @@ def _is_valid_image(b64: str, mime: str, label: str) -> bool:
     except Exception as exc:
         log.error("HTML gen: dropping image %r — %s", label, exc)
         return False
+
+
+def _select_template(template_id: str, custom_template: dict | None) -> dict:
+    """Pick the active template dict — an uploaded custom template always wins."""
+    return custom_template if custom_template else get_template(template_id)
 
 
 def _build_template_directive(template: dict) -> str:
@@ -802,11 +825,12 @@ async def generate_cim_html(
     brand_primary: str = "",
     brand_accent: str = "",
     template_id: str = "classic",
+    custom_template: dict | None = None,
 ) -> str:
     """Send all per-file findings + listing context + images to Claude → returns full HTML CIM."""
     client = get_client()
     all_images = all_images or []
-    template = get_template(template_id)
+    template = _select_template(template_id, custom_template)
 
     user_content: list[dict] = []
 
@@ -892,10 +916,21 @@ async def generate_cim_html(
     if logo_b64 and logo_mime:
         logo_instruction = (
             "## Company Logo\n"
-            "A company logo is provided below as a base64 image. "
-            "Place the exact marker <!-- LOGO --> on the LEFT side of the cover page top bar. "
-            "The system will replace <!-- LOGO --> with the actual <img> tag automatically. "
-            "IMPORTANT: because the logo occupies the top-LEFT, place 'CONFIDENTIAL INFORMATION MEMORANDUM' on the top-RIGHT (text-align:right) in the same flex row — never on the left — so they never overlap.\n\n"
+            "A company logo is provided below as a base64 image. This is MANDATORY, not optional: "
+            "you MUST place the literal marker <!-- LOGO --> in your output HTML, exactly once, "
+            "in the cover top bar's LEFT slot. Do not skip it, do not draw a substitute logo "
+            "placeholder, do not leave the left slot as an empty div when a logo was provided — "
+            "the system searches your HTML for this exact marker and only cleanly injects the "
+            "logo there. If the marker is missing, the system force-inserts the logo as a "
+            "fallback, which can visually collide with cover decorations (corner brackets, "
+            "frames) — always include the marker instead of relying on the fallback.\n"
+            "Required top bar structure (adapt colors/fonts to the active template, keep this "
+            "exact element/attribute shape):\n"
+            '<div style="display:flex;justify-content:space-between;align-items:center;'
+            'width:100%;position:relative;z-index:5;"><div><!-- LOGO --></div>'
+            '<div style="text-align:right;">CONFIDENTIAL INFORMATION MEMORANDUM</div></div>\n'
+            "IMPORTANT: because the logo occupies the top-LEFT, place 'CONFIDENTIAL INFORMATION MEMORANDUM' on the top-RIGHT (text-align:right) in the same flex row — never on the left — so they never overlap. "
+            "This top bar row's z-index:5 must sit above any decorative background shapes, corner brackets, or frame borders elsewhere on the cover.\n\n"
         )
         user_content.append({"type": "text", "text": logo_instruction})
         user_content.append({
@@ -951,10 +986,16 @@ async def generate_cim_html(
             if "<!-- LOGO -->" in html:
                 html = html.replace("<!-- LOGO -->", logo_img, 1)
             else:
-                # Fallback: inject as absolute-positioned element after <body> open tag
+                # Fallback: Claude omitted the marker despite the mandatory instruction —
+                # force-inject after <body>. Inset past the ~24px corner-ornament convention
+                # templates use (see cover_override frames/brackets in core/templates.py) and
+                # give it its own translucent backing chip so it stays legible and visually
+                # separated even if it lands near a decorative background line/shape.
+                log.error("HTML gen: Claude omitted <!-- LOGO --> marker — using fallback placement")
                 logo_tag = (
-                    f'<div style="position:absolute;top:1.5rem;left:2rem;z-index:10;">'
-                    + logo_img + f'</div>'
+                    '<div style="position:absolute;top:3rem;left:3rem;z-index:20;'
+                    'background:rgba(0,0,0,0.35);border-radius:8px;padding:10px 16px;">'
+                    + logo_img + '</div>'
                 )
                 html = re.sub(r'<body\b[^>]*>', lambda m: m.group(0) + logo_tag, html, count=1)
 
