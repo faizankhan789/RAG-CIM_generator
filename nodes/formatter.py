@@ -7,7 +7,9 @@ import io
 import logging
 
 import httpx
+from datetime import date
 
+from core.cim_assembler import assemble
 from core.llm import generate_cim_html
 from state import CIMState
 
@@ -102,12 +104,26 @@ async def formatter_node(state: CIMState) -> dict:
         "Formatter: generating CIM HTML (findings=%d, images=%d, logo=%s, brand=%s)",
         len(all_findings), len(all_images), bool(logo_b64), brand_primary or "none",
     )
-    html = await generate_cim_html(
+    llm_output = await generate_cim_html(
         all_findings, listing_xml, listing_name, asking_price, all_images,
         logo_b64=logo_b64, logo_mime=logo_mime,
         brand_primary=brand_primary, brand_accent=brand_accent,
         template_id=template_id,
         custom_template=custom_template,
     )
+
+    if custom_template:
+        # PDF-upload flow — generate_cim_html already returned a full HTML document.
+        html = llm_output
+    else:
+        # One of the 5 built-in templates — llm_output is marker-delimited text;
+        # assemble() renders it through that template's fixed chrome skeleton.
+        html = assemble(
+            llm_output, template_id, listing_name, asking_price,
+            date_str=date.today().strftime("%B %d, %Y"),
+            logo_b64=logo_b64, logo_mime=logo_mime,
+            brand_primary=brand_primary, brand_accent=brand_accent,
+        )
+
     log.info("Formatter: done — %.1f KB", len(html) / 1024)
     return {"cim_output": html}

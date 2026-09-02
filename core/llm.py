@@ -19,7 +19,7 @@ log = logging.getLogger(__name__)
 
 MODEL = os.environ["CIM_MODEL"]  # set in .env or deployment env vars
 MAX_TOKENS = 8192
-MAX_HTML_TOKENS = 32000
+MAX_HTML_TOKENS = 64000  # Haiku 4.5's actual max_tokens ceiling (verified via Models API)
 
 # Global token accumulator — shared across all tasks in the process.
 # reset_token_counters() called at pipeline start; get_token_counts() at end.
@@ -725,6 +725,423 @@ TECHNICAL REQUIREMENTS
 Return ONLY the complete HTML document starting with <!DOCTYPE html>. No explanation, no markdown fences."""
 
 
+_MARKER_PROMPT = """\
+You are a world-class investment banking analyst writing the CONTENT of a premium
+Confidential Information Memorandum (CIM). This document must read like it came from
+Goldman Sachs or Lazard — polished, precise, compelling.
+
+IMPORTANT — you are NOT building a full HTML page. The cover, top/bottom bars, table of
+contents, section-header bands, and disclaimer page are all rendered separately by fixed
+code from real listing data — you never write any of that. Your entire job is to (1) name
+the industry and (2) write the CONTENT of each included section, wrapped in the markers
+below. Do not output <!DOCTYPE>, <html>, <head>, <body>, or <style> — none of that exists
+in your output.
+
+═══════════════════════════════════════════════
+OUTPUT CONTRACT — MARKERS ONLY
+═══════════════════════════════════════════════
+Emit, in this exact order, nothing else:
+
+1. Exactly once, at the very top:
+   <!-- INDUSTRY: Restaurant & Food Service -->
+   A short, human-readable industry label (e.g. "Restaurant & Food Service",
+   "Hotel & Hospitality", "Technology / SaaS", "Real Estate"). Include a plain-English
+   keyword for the business type in the label — it is used downstream to pick a color
+   palette, so a vague label like "Business" or "Company" is a bug.
+
+2. If there is at least one real numeric metric to show (revenue, EBITDA, occupancy,
+   headcount, etc.), a stat strip wrapped in markers — omit this block entirely if no
+   real metrics exist, do NOT invent placeholder stats to fill it:
+   <!-- STATS -->
+   ...a single C:stat-strip block (see KEY METRICS below)...
+   <!-- /STATS -->
+
+3. One block per included section, in Roman-numeral order, contiguously renumbered
+   starting at "I" (if you skip a section for lack of data, do NOT leave a gap — e.g. if
+   you skip IV, the next section you include becomes "IV", not "V"):
+   <!-- SECTION num="I" title="Executive Summary" -->
+   ...your section body HTML (see CONTENT SECTIONS below)...
+   <!-- /SECTION -->
+
+There is no separate table-of-contents step and no separate footer/disclaimer step —
+because the chrome is built directly from the SECTION markers you emit, the TOC and your
+sections are always in sync by construction. Do not write a table of contents yourself.
+
+═══════════════════════════════════════════════
+CRITICAL — INLINE STYLES ONLY
+═══════════════════════════════════════════════
+There is no <style> block anywhere in the final document and none of your CSS classes or
+ids will have any matching rule — every element you write MUST carry its own complete
+`style="..."` attribute for anything that needs to look a particular way. Concretely:
+- NEVER write a `<style>` tag, a `class="..."` attribute relied on for appearance, or an
+  `id`-based selector. Inline `style="..."` on every element is the only mechanism that
+  will render.
+- Bullet markers: since `::before` rules don't work without a stylesheet, do NOT rely on
+  `<ul><li>` default bullets or `::before` for styled dots/icons. Instead give the `<ul>`
+  `style="list-style:none;"` and put the bullet/dot/icon as a real leading element (a
+  `<span>` or the icon `<svg>` itself) inside each `<li>`.
+- Financial numbers: add `style="font-variant-numeric:tabular-nums;"` (combined with
+  whatever other inline styles that element needs) on any element showing a number.
+- NEVER use CSS custom properties/`var(--x)`, NEVER use `clamp()`, NEVER use the `inset`
+  shorthand (use explicit top/right/bottom/left), NEVER use `object-fit` (use
+  `width:100%;height:100%;` with `overflow:hidden` on the parent instead).
+- TEXT CONTRAST: any text you place on a colored/dark background in your own freeform HTML
+  needs an inline color with at least 4.5:1 contrast — near-white or a light solid color,
+  never a low-opacity "watermark" effect, never a hue/brightness close to its background.
+  (The 8 C: components handle their own contrast — this applies to freeform HTML only.)
+- SVG ICON SIZING: every icon `<svg>` tag must carry literal `width`/`height` attributes
+  (not just rely on a class) — otherwise it defaults to the browser's native 300×150px.
+- LONG/REAL DATA MUST WRAP, NEVER OVERFLOW: business names, addresses, line-item labels,
+  and financial figures come from the real customer's data and their length is unknown to
+  you — any element holding one of these values MUST include
+  `overflow-wrap:break-word;word-break:break-word;` in its inline style. Never assume a
+  name or number is short enough to fit.
+- FLEX/GRID CHILDREN MUST SHRINK: the 8 C: components (STEP 2) already bake `min-width:0`
+  into every card/column/quadrant they render — you don't need to add it there. But if your
+  own freeform HTML (e.g. [image-mosaic]'s multi-column grid) uses `display:flex` or
+  `display:grid`, every direct child MUST include `min-width:0` in its inline style, or a
+  long real name/number will overflow past its column and collide with the next one.
+- NO `position:absolute` IN SECTION/STATS BODY CONTENT: absolute positioning is reserved
+  for the cover page chrome you do not write. Never use `position:absolute` (or `fixed`)
+  anywhere inside `<!-- STATS -->` or `<!-- SECTION -->` content — it escapes normal
+  document flow and is the single most common way body content ends up overlapping
+  neighboring text or cards. Keep every freeform layout in normal flex/grid/block flow so
+  it grows safely regardless of real content length.
+
+═══════════════════════════════════════════════
+STEP 1 — DETECT INDUSTRY
+═══════════════════════════════════════════════
+Identify the business type from the content. Examples:
+Hotel/Hospitality, Restaurant/Food & Beverage, Travel & Tourism, Healthcare, Technology/SaaS,
+Retail, Manufacturing, Real Estate, Education, Logistics, Professional Services, E-commerce.
+
+Industry KPIs — use ONLY metrics actually present in the data:
+- Hotel: RevPAR, ADR, Occupancy %, Total Keys, F&B Revenue, GOP Margin, Star Rating
+- Restaurant: Covers/Day, Avg Check, COGS%, Labour%, Seat Turns, Cuisine, Seating Capacity
+- Travel: Booking Volume, Destinations, Repeat Rate, Package Types, Peak Season
+- SaaS/Tech: ARR/MRR, Churn, CAC, LTV, NPS, Gross Margin, DAU/MAU
+- Healthcare: Patient Volume, Procedures/Day, Payer Mix, Certifications
+- Retail: Same-Store Sales, Inventory Turns, SKU Count, Basket Size
+- Real Estate: Cap Rate, NOI, Occupancy %, Lease Terms, Price/SqFt
+
+═══════════════════════════════════════════════
+STEP 2 — SECTION LAYOUT COMPONENTS
+═══════════════════════════════════════════════
+Two kinds of content go inside a section body:
+
+1. FREEFORM HTML — plain prose (`<p>`, `<ul>`/`<li>`), and these 4 components, written
+   directly as HTML exactly as before:
+   ▸ [narrative-pull]  Large pull-quote paragraph with accent left-border. For text-rich, metric-light sections.
+   ▸ [image-hero]      Full-width image, max-height 480px. Use for best property/exterior/product shot.
+   ▸ [image-mosaic]    2-3 column image gallery. Use when 3+ contextually relevant images exist.
+   ▸ [bullet-list]     Styled accent-dot bullet points (or the matching ICON SYSTEM glyph in place of the dot for facilities/amenities/product lists). Use for lists of 5+ items without card structure.
+
+2. COMPONENT BLOCKS — the 8 structural/multi-column/chart layouts below are NEVER written as
+   HTML by you. Instead emit a marker of the form:
+   <!-- C:type -->
+   {...JSON payload with the real extracted data...}
+   <!-- /C -->
+   A fixed renderer turns this JSON into the actual HTML/CSS/SVG — this is what prevents
+   layout overlap on data whose length you can't predict. You supply ONLY real values
+   (numbers, labels, text extracted from the source) in the JSON — never markup, never
+   invented figures. `type` is one of the 8 names below; payload shape is exact — extra keys
+   are ignored, missing required keys drop the whole block silently.
+
+▸ C:stat-strip — 3+ numeric KPI cards. Payload is a JSON array:
+  [{"icon":"dollar","label":"Annual Revenue","value":"$2,400,000"}, ...]
+  `icon` is one of the ICON SYSTEM names below (STEP 3) or omit it.
+
+▸ C:data-table — any tabular/multi-period financial data:
+  {"headers":["Metric","2022","2023","2024"],"rows":[["Revenue","£1.2M","£1.4M","£1.6M"]],"footnote":"optional"}
+
+▸ C:chart-bar — trend across 2+ periods of the same metric (e.g. revenue by year). Supply
+  RAW numeric values only — the renderer computes bar heights, scaling, and value-label
+  abbreviation itself, and caps display at the most recent 6 periods:
+  {"periods":[{"label":"2022","value":1200000},{"label":"2023","value":1400000}],"currency":"£","suffix":""}
+  Always pair with a C:data-table showing the exact figures — the chart supplements, never replaces, the table.
+
+▸ C:chart-donut — composition/mix breakdown (e.g. revenue by segment). Supply RAW amounts,
+  NOT percentages — the renderer computes percentages and arc geometry from these values,
+  so you cannot mis-compute or fabricate a split:
+  {"segments":[{"label":"Rooms","value":1800000},{"label":"F&B","value":600000}],"center_label":"optional"}
+
+▸ C:two-col — overview/intro sections needing a narrative + highlight box:
+  {"left_html":"<p>...</p>","right_title":"Key Facts","right_items":["Founded 2010","45 employees"],"ratio":"60-40"}
+  `left_html` is your own freeform narrative HTML (still prose, still your writing quality);
+  `ratio` is "60-40" or "50-50". `right_items` are short real facts, not paragraphs.
+
+▸ C:card-grid — 2+ equal items (team members, features, locations):
+  {"cols":2,"cards":[{"title":"Jane Doe","subtitle":"CEO","body":"15 years in hospitality"}]}
+  `cols` is 2 (≤4 items) or 3 (5+ items). `subtitle`/`body` are optional per card.
+
+▸ C:swot-grid — SWOT section only:
+  {"strengths":["..."],"weaknesses":["..."],"opportunities":["..."],"threats":["..."]}
+  Omit a key (or leave it an empty list) if the source has nothing for that quadrant.
+
+▸ C:timeline — growth plans, milestones, roadmap, history:
+  {"steps":[{"title":"Phase 1: Regional expansion","body":"optional detail"}]}
+
+SELECTION RULES:
+- Sparse data (1-3 points) → [narrative-pull] or C:two-col
+- Rich financial data → C:data-table, optionally above/below a C:stat-strip
+- Trend across 2+ periods → C:chart-bar beside its C:data-table; a composition/mix breakdown → C:chart-donut — the chart supplements the table, never replaces it
+- Team section → C:card-grid (cols 2 for ≤4 people, 3 for 5+)
+- Growth/strategy/roadmap → C:timeline
+- Never use identical layout for two adjacent sections — vary for visual rhythm
+- Combine freely: e.g. a C:stat-strip + a C:two-col + a C:data-table all in one section body
+
+═══════════════════════════════════════════════
+STEP 3 — ICON SYSTEM
+═══════════════════════════════════════════════
+For C:stat-strip (STEP 2), you only ever supply an icon NAME string (e.g. "dollar") in the
+JSON payload — the renderer owns the actual SVG markup, so skip straight to STEP 4.
+
+For the two remaining freeform icon uses below, a fixed set of inline monoline SVG icons.
+Copy the markup below VERBATIM (only the wrapping <svg> tag's width/height/color may change,
+via its own inline `style`) — never redraw a path or invent a new icon shape; hand-drawn path
+data renders broken or illegible at this scale.
+
+Icon usage is DELIBERATE, not decorative. Use icons ONLY in these places:
+1. Facilities/amenities/product [bullet-list] items — icon replaces the bullet (see INLINE
+   STYLES ONLY above — the icon IS the leading element inside the `<li>`, no `::before`).
+2. Executive Summary / Investment Highlights list items — the `check` icon replaces the dot.
+Do NOT scatter icons through body paragraphs, table cells, or section header bands — that
+reads as a generic template, not a bank-grade CIM.
+
+Shared attributes on every icon — these MUST be literal attributes on the <svg> tag itself,
+every single time, with NO exceptions: viewBox="0 0 24 24" fill="none" stroke="currentColor"
+stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="22" height="22".
+An inline `style="color:...;"` on the icon or a wrapper sets its color via `currentColor`.
+Copy each icon's inner shapes (rect/line/circle/path/polyline/polygon) verbatim from the
+list below; never invent a new tag name (e.g. `<calendar>` is not a real SVG element).
+
+- check (highlights/checklists):
+  <svg ...><polyline points="4 12 9 17 20 6"/></svg>
+- trend-up (growth, revenue/margin growth):
+  <svg ...><polyline points="3 17 9 11 13 15 21 7"/><polyline points="14 7 21 7 21 14"/></svg>
+- dollar (revenue/financial KPIs):
+  <svg ...><line x1="12" y1="2" x2="12" y2="22"/><path d="M15.5 8c0-1.7-1.6-3-3.5-3s-3.5 1.3-3.5 3 1.6 2.4 3.5 2.8 3.5 1.1 3.5 2.7-1.6 3-3.5 3-3.5-1.3-3.5-3"/></svg>
+- building (properties/facilities/locations):
+  <svg ...><rect x="4" y="3" width="16" height="18" rx="1"/><line x1="9" y1="8" x2="9.01" y2="8"/><line x1="15" y1="8" x2="15.01" y2="8"/><line x1="9" y1="13" x2="9.01" y2="13"/><line x1="15" y1="13" x2="15.01" y2="13"/><line x1="10" y1="21" x2="10" y2="17"/><line x1="14" y1="21" x2="14" y2="17"/></svg>
+- users (team/HR/management):
+  <svg ...><circle cx="9" cy="8" r="3"/><path d="M4 20c0-3 2.5-5 5-5s5 2 5 5"/><circle cx="17" cy="9" r="2.5"/><path d="M15.5 20c.2-2.2 1.7-4 3.8-4.4"/></svg>
+- shield (legal/compliance/risk):
+  <svg ...><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z"/></svg>
+- calendar (dates/timeline/growth plan):
+  <svg ...><rect x="3" y="5" width="18" height="16" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="3" x2="8" y2="7"/><line x1="16" y1="3" x2="16" y2="7"/></svg>
+- map-pin (location):
+  <svg ...><path d="M12 21s7-6.5 7-11a7 7 0 1 0-14 0c0 4.5 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
+- briefcase (operations/products/services):
+  <svg ...><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="3" y1="13" x2="21" y2="13"/></svg>
+- star (awards/reputation/quality):
+  <svg ...><polygon points="12 2 15 9 22 9 16.5 13.5 18.5 21 12 16.5 5.5 21 7.5 13.5 2 9 9 9"/></svg>
+
+Note: the `lock` icon is NOT yours to place — it belongs to the section-footer band, which
+is rendered by the chrome layer, not you.
+
+═══════════════════════════════════════════════
+STEP 4 — CHARTS (real, data-accurate)
+═══════════════════════════════════════════════
+Charts are NOT hand-drawn SVG anymore — you never write chart markup or compute a
+coordinate, percentage, or stroke value yourself. Use C:chart-bar (trend across 2+ periods)
+or C:chart-donut (composition/mix breakdown) from STEP 2, supplying only the raw real
+numbers you extracted. The renderer computes all geometry, scaling, and percentages from
+those raw values — this is deliberate: it removes any chance of you mis-computing or
+fabricating a proportion. Never fabricate a chart for data that isn't in the source, and
+always pair a chart with its C:data-table so the exact figures are also shown in full.
+
+═══════════════════════════════════════════════
+STEP 5 — WRITE THE CONTENT
+═══════════════════════════════════════════════
+
+CRITICAL DATA RULES:
+- Copy ALL financial figures, percentages, dates EXACTLY as they appear in the source data — never round, abbreviate, or infer.
+- Include ONLY sections where you have actual data — skip sections with no content (renumber contiguously, see OUTPUT CONTRACT above).
+- Never invent metrics, names, or figures not present in the source data.
+- STRICT STRUCTURE: Generate ONLY sections I through X as defined below. Do NOT create any section, heading, or topic outside this list. No bonus sections, no summaries, no additional pages.
+- IGNORE internal CRM metadata: do NOT include CRM IDs, usernames, system dates, listing status, campaign IDs, NDA flags, or any other internal admin fields in the document. These are system fields, not business content.
+- EMPTY SUBTOPIC RULE: If a subtopic has no data, omit it entirely — do NOT show a heading with empty or placeholder content.
+
+⛔ FINANCIAL NUMBER RULES — STRICTLY ENFORCED:
+- Every number, figure, percentage, currency amount, ratio, and date in the output MUST come directly from the source data provided. NO exceptions.
+- FORBIDDEN: rounding (e.g. source says £123,450 → do NOT write £123k or £120,000)
+- FORBIDDEN: inferring (e.g. if only revenue is given → do NOT calculate or guess profit margin)
+- FORBIDDEN: averaging or estimating (e.g. do NOT write "approximately £X" unless source says so)
+- FORBIDDEN: industry benchmarks as if they are this business's numbers (e.g. do NOT write "typical margins of 15%" as if it applies here)
+- FORBIDDEN: projections or forecasts unless explicitly stated in source documents
+- If a financial figure is NOT in the source data, leave that subtopic out entirely — do not substitute, estimate, or approximate.
+- When in doubt: OMIT rather than invent.
+
+━━━━━━━━━━━━━━━━━━━━━━━━
+KEY METRICS (the <!-- STATS --> block, if used)
+━━━━━━━━━━━━━━━━━━━━━━━━
+The entire <!-- STATS --> block is a single C:stat-strip (STEP 2) — 3-6 cards, one JSON
+array entry each: {"icon":"dollar","label":"...","value":"..."}. Pick the closest icon match
+(dollar for revenue/EBITDA, trend-up for growth/margin %, building for keys/units/locations,
+users for headcount, star for rating) or omit `icon` rather than force a wrong one. Only use
+metrics actually present in the data.
+
+━━━━━━━━━━━━━━━━━━━━━━━━
+CIM STRUCTURE — 10 SECTIONS
+━━━━━━━━━━━━━━━━━━━━━━━━
+Use this exact section and subtopic structure as the backbone of every CIM.
+ONLY include subtopics where you have actual data — skip any subtopic with no content.
+Adapt terminology to the detected industry (e.g. "Manufacturing processes" → "Kitchen Operations" for a restaurant).
+
+I. Executive Summary
+   • Brief overview of the business
+   • Key investment highlights
+   • Summary of financial performance
+   • Asking price and key terms
+
+II. Company Overview
+   • History and background
+   • Ownership structure
+   • Values
+   • Management team and key personnel
+   • Organizational chart
+   • Culture
+   • Vision and Mission
+   • Location and facilities
+   • Products and services
+   • Competitive advantages
+   • Market position and industry overview
+   • Social Responsibility & Sustainability
+   • SWOT analysis (2×2 grid)
+
+III. Financial Information
+   • Historical financial statements
+   • Adjusted EBITDA and other relevant metrics
+   • Detailed breakdown of revenue streams
+   • Key performance indicators (KPIs)
+   • Tax information
+   • Financial ratios and trends
+   • Projections and forecasts
+   • Cost structure analysis
+   • Capitalization table
+   • Debt structure
+
+IV. Operations
+   • Manufacturing processes (adapt name to industry, e.g. Kitchen Operations for restaurants)
+   • Supply chain and logistics
+   • Key suppliers and customers
+   • Quality certifications and standards
+   • Technology and equipment
+   • Technology infrastructure & security
+   • Research and development
+   • Intellectual property
+   • Scalability and capacity for growth
+
+V. Marketing and Sales
+   • Target market and customer segmentation
+   • Marketing strategies and channels
+   • Marketing & sales budgets
+   • Sales pipeline
+   • Customer churn rate
+   • Sales processes and distribution channels
+   • Branding and advertising
+   • Customer acquisition costs
+   • Customer relationship management
+
+VI. Legal and Regulatory
+   • Legal structure and compliance
+   • Permits and licenses
+   • Data privacy & security
+   • Insurance coverage
+   • Intellectual property strategy
+   • Contracts and agreements
+   • Environmental regulations
+   • International compliance
+   • Litigation and disputes
+
+VII. Human Resources
+   • Employee demographics and compensation
+   • Benefits and training programs
+   • Management succession plan
+   • Key employee retention strategies
+   • Employee turnover rate
+   • Labor relations and unions
+
+VIII. Growth Opportunities
+   • Expansion plans and strategies
+   • New product development
+   • International expansion
+   • Strategic partnerships
+   • Market penetration and diversification
+   • Joint ventures & alliances
+   • Franchise opportunities
+   • Mergers and acquisitions
+
+IX. Risks
+   • Industry and market risks
+   • Competition
+   • Financial risks
+   • Reputation & brand risks
+   • Technology risks
+   • Political & economic risks
+   • Environmental, Social, and Governance (ESG) risks
+   • Operational risks
+   • Risk assessment matrix
+   • Legal and regulatory risks
+
+X. Appendix
+   • Detailed financial statements
+   • Market research data
+   • Appraisals and valuations
+   • Legal documents
+   • Customer testimonials
+   • Industry awards and recognition
+   • Customer journey map
+   • Competitive analysis matrix
+   • Value chain analysis
+   • Product lifecycle analysis
+   • Market segmentation map
+
+━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION BODY CONTENT PATTERNS
+━━━━━━━━━━━━━━━━━━━━━━━━
+This is everything that goes inside a `<!-- SECTION -->...<!-- /SECTION -->` block. Do NOT
+include a header band, footer bar, or title heading of your own — the chrome layer wraps
+your body content with the section's numbered header band and footer automatically from the
+`num`/`title` attributes you put on the marker. Start straight into the content:
+
+• EXECUTIVE SUMMARY / INVESTMENT HIGHLIGHTS:
+  - Opening paragraph: large pull-quote style (inline style: font-size:1.15rem, line-height:1.8, border-left:4px solid [accent-ish], padding-left:1.5rem)
+  - Bullet highlights: styled list items, each prefixed by the `check` icon in an accent-ish color — not a plain text dot
+
+• FINANCIAL TABLES:
+  - Emit a C:data-table block (STEP 2) with the exact source figures as headers/rows.
+  - Pair with a C:chart-bar (revenue/EBITDA trend) and/or C:chart-donut (revenue mix)
+    whenever 2+ comparable data points exist — the chart supplements the table, it never
+    replaces it.
+
+• IMAGE PLACEMENT (<!-- IMG:N -->):
+  - Hero/exterior/product shots: full-width poster format (inline style: max-height:480px, width:100%, overflow:hidden wrapper, border-radius:12px, box-shadow:0 8px 32px rgba(0,0,0,0.18))
+  - Interior/detail shots: 2-column grid if 2+ images available (inline style: display:flex, gap:1.5rem)
+  - Team/headshot photos: circular crop (inline style: border-radius:50%, width/height:120px, overflow:hidden wrapper), centered
+  - Each image: a `<figcaption>` below in muted italic inline style
+  - Place images where they are CONTEXTUALLY relevant — property photo near Property Details, food shots near Menu/Concept section, etc.
+  - DO NOT cluster all images together — spread them throughout the document
+  - Use <!-- IMG:N --> markers generously if images are available — they make the CIM dramatically more compelling
+
+• TWO-COLUMN LAYOUT (for details/overview sections):
+  - Emit a C:two-col block (STEP 2) — `left_html` is your narrative prose, `right_items`
+    are real key facts (not paragraphs).
+
+• SWOT (if data available):
+  - Emit a single C:swot-grid block (STEP 2) with the 4 quadrants — colors and layout are
+    fixed by the renderer.
+
+• MANAGEMENT TEAM (if data available):
+  - Emit a C:card-grid block (STEP 2): cols 2 for ≤4 people, cols 3 for 5+.
+
+• GROWTH & STRATEGY / INVESTMENT THESIS:
+  - Emit a C:timeline block (STEP 2) with one step per milestone/phase.
+
+Return ONLY the markers and their content, in the exact order specified in OUTPUT CONTRACT
+above. No explanation, no markdown fences, no <!DOCTYPE>/<html>/<head>/<body>/<style> tags."""
+
+
 _MIN_DIM = 32
 
 
@@ -800,6 +1217,25 @@ same Roman numeral, and same underlying content/subtopics:
 """
 
 
+def _build_marker_heading_directive(template: dict) -> str:
+    """Marker-branch equivalent of _build_template_directive: content-only (section title
+    wording), since palette/fonts/cover/section-header markup are now chrome's job."""
+    headings = template.get("headings") or {}
+    if not headings:
+        return ""
+    heading_lines = "\n".join(f'- "{old}" → "{new}"' for old, new in headings.items())
+    return f"""\
+
+═══════════════════════════════════════════════
+MANDATORY TEMPLATE OVERRIDE — "{template['name']}"
+═══════════════════════════════════════════════
+The user selected this design template, which renames section titles. Use these titles
+as the `title="..."` attribute on the matching SECTION marker — same order, same Roman
+numeral, same underlying content/subtopics, only the displayed name changes:
+{heading_lines}
+"""
+
+
 def _build_image_tag(img: dict, index: int) -> str:
     """Build an HTML figure element with embedded base64 image."""
     label = img.get("label", f"Image {index}")
@@ -827,9 +1263,17 @@ async def generate_cim_html(
     template_id: str = "classic",
     custom_template: dict | None = None,
 ) -> str:
-    """Send all per-file findings + listing context + images to Claude → returns full HTML CIM."""
+    """Send all per-file findings + listing context + images to Claude.
+
+    If custom_template is set (PDF-upload flow): returns a full HTML document, exactly
+    as today. Otherwise (one of the 5 built-in templates): returns marker-delimited
+    text (industry + section content only) — the caller (formatter_node) is
+    responsible for passing it through core.cim_assembler.assemble() to get the
+    final HTML. See docs/superpowers/specs/2026-08-31-cim-chrome-templates-design.md.
+    """
     client = get_client()
     all_images = all_images or []
+    is_custom = custom_template is not None
     template = _select_template(template_id, custom_template)
 
     user_content: list[dict] = []
@@ -896,7 +1340,12 @@ async def generate_cim_html(
                 "text": f"(Above image is Image {seq_i}: \"{label}\". Use marker <!-- IMG:{seq_i} --> to embed it.)",
             })
 
-    if brand_primary and brand_accent and template["allow_brand_override"]:
+    # For the 5 built-in templates, palette (including any brand-color override) and
+    # the logo placement are entirely chrome's job now (core/chrome/<id>.py +
+    # core/cim_assembler.py) — Claude never sees brand colors or the logo image in
+    # that branch, since it no longer authors any cover/header markup that would use
+    # them. The PDF-upload custom_template flow is unchanged.
+    if is_custom and brand_primary and brand_accent and template["allow_brand_override"]:
         user_content.append({
             "type": "text",
             "text": (
@@ -913,7 +1362,7 @@ async def generate_cim_html(
         log.debug("LLM: brand colors injected — primary=%s accent=%s", brand_primary, brand_accent)
 
     logo_instruction = ""
-    if logo_b64 and logo_mime:
+    if is_custom and logo_b64 and logo_mime:
         logo_instruction = (
             "## Company Logo\n"
             "A company logo is provided below as a base64 image. This is MANDATORY, not optional: "
@@ -938,12 +1387,16 @@ async def generate_cim_html(
             "source": {"type": "base64", "media_type": logo_mime, "data": logo_b64},
         })
 
+    if is_custom:
+        prompt_text = _HTML_PROMPT + _build_template_directive(template)
+    else:
+        prompt_text = _MARKER_PROMPT + _build_marker_heading_directive(template)
+
     user_content.append({
         "type": "text",
         "text": (
             f"Today's date is {date.today().strftime('%B %d, %Y')}.\n\n"
-            + _HTML_PROMPT
-            + _build_template_directive(template)
+            + prompt_text
         ),
     })
 
@@ -958,46 +1411,59 @@ async def generate_cim_html(
             html = final_msg.content[0].text
             _add_tokens(final_msg.usage.input_tokens, final_msg.usage.output_tokens)
 
+        if final_msg.stop_reason == "max_tokens":
+            log.error(
+                "generate_cim_html: output truncated at MAX_HTML_TOKENS=%d (output_tokens=%d) — "
+                "listing content likely too long, response may be missing sections",
+                MAX_HTML_TOKENS, final_msg.usage.output_tokens,
+            )
+
         html = html.strip()
 
-        # Strip any preamble chatter and/or markdown fencing Claude adds before the
-        # actual document (e.g. "I'll create a premium CIM...\n```html\n<!DOCTYPE...").
-        # Anchor on the real document boundaries rather than assuming the response
-        # starts with a fence — the model doesn't always obey "no explanation".
-        doctype_match = re.search(r"<!DOCTYPE\s+html", html, re.IGNORECASE)
-        if doctype_match:
-            html = html[doctype_match.start():]
-        html_end_match = re.search(r"</html\s*>", html, re.IGNORECASE)
-        if html_end_match:
-            html = html[:html_end_match.end()]
-        html = html.strip()
+        if is_custom:
+            # Strip any preamble chatter and/or markdown fencing Claude adds before the
+            # actual document (e.g. "I'll create a premium CIM...\n```html\n<!DOCTYPE...").
+            # Anchor on the real document boundaries rather than assuming the response
+            # starts with a fence — the model doesn't always obey "no explanation".
+            doctype_match = re.search(r"<!DOCTYPE\s+html", html, re.IGNORECASE)
+            if doctype_match:
+                html = html[doctype_match.start():]
+            html_end_match = re.search(r"</html\s*>", html, re.IGNORECASE)
+            if html_end_match:
+                html = html[:html_end_match.end()]
+            html = html.strip()
         if html.startswith("```"):
             lines = html.split("\n")
             html = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
         if html.endswith("```"):
             html = html.rsplit("```", 1)[0].strip()
 
-        # Replace <!-- LOGO --> marker with actual img tag (Claude places it in cover top-bar left)
-        if logo_b64 and logo_mime:
-            logo_img = (
-                f'<img src="data:{logo_mime};base64,{logo_b64}" alt="Company Logo" '
-                f'style="max-height:60px;max-width:180px;object-fit:contain;display:block;"/>'
-            )
-            if "<!-- LOGO -->" in html:
-                html = html.replace("<!-- LOGO -->", logo_img, 1)
-            else:
-                # Fallback: Claude omitted the marker despite the mandatory instruction —
-                # force-inject after <body>. Inset past the ~24px corner-ornament convention
-                # templates use (see cover_override frames/brackets in core/templates.py) and
-                # give it its own translucent backing chip so it stays legible and visually
-                # separated even if it lands near a decorative background line/shape.
-                log.error("HTML gen: Claude omitted <!-- LOGO --> marker — using fallback placement")
-                logo_tag = (
-                    '<div style="position:absolute;top:3rem;left:3rem;z-index:20;'
-                    'background:rgba(0,0,0,0.35);border-radius:8px;padding:10px 16px;">'
-                    + logo_img + '</div>'
+        if is_custom:
+            # Replace <!-- LOGO --> marker with actual img tag (Claude places it in cover top-bar left)
+            if logo_b64 and logo_mime:
+                logo_img = (
+                    f'<img src="data:{logo_mime};base64,{logo_b64}" alt="Company Logo" '
+                    f'style="max-height:60px;max-width:180px;object-fit:contain;display:block;"/>'
                 )
-                html = re.sub(r'<body\b[^>]*>', lambda m: m.group(0) + logo_tag, html, count=1)
+                if "<!-- LOGO -->" in html:
+                    html = html.replace("<!-- LOGO -->", logo_img, 1)
+                else:
+                    # Fallback: Claude omitted the marker despite the mandatory instruction —
+                    # force-inject after <body>. Inset past the ~24px corner-ornament convention
+                    # templates use (see cover_override frames/brackets in core/templates.py) and
+                    # give it its own translucent backing chip so it stays legible and visually
+                    # separated even if it lands near a decorative background line/shape.
+                    log.error("HTML gen: Claude omitted <!-- LOGO --> marker — using fallback placement")
+                    logo_tag = (
+                        '<div style="position:absolute;top:3rem;left:3rem;z-index:20;'
+                        'background:rgba(0,0,0,0.35);border-radius:8px;padding:10px 16px;">'
+                        + logo_img + '</div>'
+                    )
+                    html = re.sub(r'<body\b[^>]*>', lambda m: m.group(0) + logo_tag, html, count=1)
+        # else: the marker branch never asks Claude to place a logo at all — the logo
+        # <img> is built directly from real logo_b64/logo_mime by core/cim_assembler.py
+        # and handed to the chrome renderer, so there's no marker to substitute here
+        # and no fallback-placement bug class to have.
 
         # Replace <!-- IMG:N --> markers with actual base64 img tags (sequential over valid images)
         for seq_i, (_orig_i, img) in enumerate(valid_images, start=1):
