@@ -423,8 +423,44 @@ class TestTemplateUpload:
         body = response.json()
         assert body["template"]["id"] == "custom-upload"
         assert isinstance(body["warnings"], list)
+        assert body["template"]["file_ext"] == "pdf"
+        assert body["template"]["file_b64"]  # raw file round-trips for core/llm.py's vision attach
 
-    def test_rejects_non_pdf(self, client):
+    def test_accepts_docx(self, client):
+        from tests.template_helpers import make_text_docx
+        response = client.post(
+            "/template/upload",
+            files={"file": ("template.docx", make_text_docx(),
+                             "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["template"]["id"] == "custom-upload"
+        assert body["template"]["file_ext"] == "docx"
+
+    def test_accepts_html(self, client):
+        from tests.template_helpers import make_text_html
+        response = client.post(
+            "/template/upload",
+            files={"file": ("template.html", make_text_html(), "text/html")},
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["template"]["id"] == "custom-upload"
+        assert body["template"]["file_ext"] == "html"
+
+    def test_accepts_xml(self, client):
+        from tests.template_helpers import make_custom_schema_xml
+        response = client.post(
+            "/template/upload",
+            files={"file": ("template.xml", make_custom_schema_xml(), "application/xml")},
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["template"]["id"] == "custom-upload"
+        assert body["template"]["file_ext"] == "xml"
+
+    def test_rejects_unsupported_file_type(self, client):
         response = client.post(
             "/template/upload",
             files={"file": ("notes.txt", b"just some text", "text/plain")},
@@ -439,3 +475,10 @@ class TestTemplateUpload:
             files={"file": ("scanned.pdf", pdf_bytes, "application/pdf")},
         )
         assert response.status_code == 422
+
+    def test_rejects_unopenable_doc(self, client):
+        response = client.post(
+            "/template/upload",
+            files={"file": ("legacy.doc", b"not a real ole package", "application/msword")},
+        )
+        assert response.status_code == 400

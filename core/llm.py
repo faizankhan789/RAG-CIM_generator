@@ -1393,6 +1393,53 @@ async def generate_cim_html(
             "source": {"type": "base64", "media_type": logo_mime, "data": logo_b64},
         })
 
+    # Raw uploaded template file, if the client round-tripped it (see
+    # server.py's /template/upload, core/template_extractor.py). Runs
+    # alongside the deterministic palette/font/layout_notes extraction above,
+    # not instead of it — it's the same file, this just gives Claude the
+    # actual thing to look at for anything the deterministic pass can't
+    # capture (table borders, multi-column layout, decorative shapes). Older
+    # custom_template dicts (extracted before this field existed) simply
+    # won't have file_b64, so this block is skipped and behavior is unchanged.
+    #
+    # Only PDF gets a true vision/document attachment — Claude's document
+    # content block only accepts application/pdf. Word/HTML/XML have no such
+    # vision path, so their real text/markup is inlined as a plain text block
+    # instead (still lets Claude read the actual structure, just not "see" it).
+    file_b64 = template.get("file_b64")
+    file_ext = template.get("file_ext", "")
+    if is_custom and file_b64:
+        design_ref_intro = (
+            "## Uploaded Template File (design reference ONLY)\n"
+            "The file the user uploaded as their design template is attached/quoted below. "
+            "Study its actual layout — cover composition, section header bands, table/list "
+            "structures, spacing, decorative shapes, image placement — and reproduce that "
+            "visual design as closely as possible. The palette/fonts/layout notes above are "
+            "a deterministic summary of this same file; treat the attachment as the "
+            "authoritative reference wherever that summary underspecifies something.\n"
+            "CRITICAL: this file is a DESIGN REFERENCE ONLY. Never copy any text, numbers, "
+            "company name, or figures from it into your output — every word and number you "
+            "write must come from the listing data / findings / images provided above. Mimic "
+            "the LOOK of the uploaded template, never its CONTENT."
+        )
+        if file_ext == "pdf":
+            user_content.append({"type": "text", "text": design_ref_intro})
+            user_content.append({
+                "type": "document",
+                "source": {"type": "base64", "media_type": "application/pdf", "data": file_b64},
+            })
+        else:
+            raw_bytes = base64.standard_b64decode(file_b64)
+            if file_ext in ("docx", "doc"):
+                from core.docx_style_extractor import extract_plain_text
+                raw_text = extract_plain_text(raw_bytes)
+            else:  # html, htm, xml
+                raw_text = raw_bytes.decode("utf-8", errors="ignore")
+            user_content.append({
+                "type": "text",
+                "text": design_ref_intro + f"\n\n```\n{raw_text}\n```",
+            })
+
     if is_custom:
         prompt_text = _HTML_PROMPT + _build_template_directive(template)
     else:

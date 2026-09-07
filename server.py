@@ -27,6 +27,7 @@ for _lib in ("anthropic", "httpx", "httpcore", "langgraph", "uvicorn.access"):
 log = logging.getLogger("cim_server")
 
 import asyncio
+import base64
 import json
 import time
 import uuid
@@ -43,7 +44,12 @@ from pydantic import BaseModel
 from core.listing_context import build_listing_xml
 from core import db_log
 from core.llm import MODEL, reset_token_counters, get_token_counts
-from core.pdf_style_extractor import NoExtractableTextError, extract_style_profile
+from core.template_extractor import (
+    SUPPORTED_EXTENSIONS as _SUPPORTED_TEMPLATE_EXTENSIONS,
+    NoExtractableTextError,
+    UnsupportedTemplateFileError,
+    extract_style_profile,
+)
 from core.templates import TEMPLATES
 from graph import cim_graph
 
@@ -75,7 +81,7 @@ class CIMRequest(BaseModel):
     username: str = ""       # CRM username who triggered the request
     crm_url: str = ""        # CRM instance URL (for multi-tenant tracking)
     template_id: str = "classic"  # Selected design template (see core/templates.py)
-    custom_template: dict[str, Any] | None = None  # Extracted from an uploaded PDF, see core/pdf_style_extractor.py
+    custom_template: dict[str, Any] | None = None  # Extracted from an uploaded template file, see core/template_extractor.py
 
 
 # ---------------------------------------------------------------------------
@@ -263,7 +269,10 @@ async def _run_job_pipeline(req: CIMRequest, job: CIMJob) -> None:
 
     try:
         for step, label, msg in progress_steps:
-            await asyncio.sleep(50)
+            try:
+                await asyncio.wait_for(asyncio.shield(pipeline_task), timeout=50)
+            except asyncio.TimeoutError:
+                pass
             if pipeline_task.done():
                 break
             job.add_event({"step": step, "label": label, "message": msg, "status": "in_progress"})
@@ -477,17 +486,46 @@ async def generate_cim_json(req: CIMRequest):
     return JSONResponse(content={"html": html, "errors": errors})
 
 
+# Content-type fallback for when a filename arrives without a usable extension —
+# extension is still checked first (see template_upload below).
+_TEMPLATE_CONTENT_TYPE_EXT = {
+    "application/pdf": "pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+    "application/msword": "doc",
+    "text/html": "html",
+    "application/xhtml+xml": "html",
+    "text/xml": "xml",
+    "application/xml": "xml",
+}
+
+
 @app.post("/template/upload")
 async def template_upload(file: UploadFile = File(...)):
-    """Extract a CIM template style (colors/fonts/layout) from an uploaded PDF. No LLM."""
-    is_pdf = (file.content_type == "application/pdf") or (file.filename or "").lower().endswith(".pdf")
-    if not is_pdf:
-        raise HTTPException(status_code=400, detail="Only PDF files are supported.")
-    pdf_bytes = await file.read()
+    """Extract a CIM template style (colors/fonts/layout) from an uploaded
+    PDF, Word (.docx), HTML, or XML file. No LLM."""
+    filename = file.filename or ""
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    if ext not in _SUPPORTED_TEMPLATE_EXTENSIONS:
+        ext = _TEMPLATE_CONTENT_TYPE_EXT.get((file.content_type or "").split(";")[0].strip().lower(), ext)
+    if ext not in _SUPPORTED_TEMPLATE_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail="Unsupported file type. Upload a PDF, Word (.docx), HTML, or XML file.",
+        )
+    file_bytes = await file.read()
     try:
-        template, warnings = extract_style_profile(pdf_bytes)
+        template, warnings = extract_style_profile(file_bytes, filename or f"upload.{ext}")
     except NoExtractableTextError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
+    except UnsupportedTemplateFileError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    # Carry the raw file back to the client so it round-trips into the later
+    # /generate-cim call's custom_template dict — core/llm.py attaches it as
+    # an actual reference (vision document for PDF, plain text otherwise) so
+    # Claude can see the real layout, not just the deterministic extraction
+    # above. See core/llm.py:generate_cim_html.
+    template["file_b64"] = base64.standard_b64encode(file_bytes).decode("utf-8")
+    template["file_ext"] = ext
     return JSONResponse(content={"template": template, "warnings": warnings})
 
 

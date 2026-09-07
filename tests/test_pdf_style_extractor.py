@@ -7,12 +7,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core.pdf_style_extractor import (
-    _detect_alignment,
-    _detect_bullet_glyph,
-    _font_stack_for,
-    _hex_color,
-)
+from core.pdf_style_extractor import _detect_alignment, _hex_color
+from core.style_shared import detect_bullet_glyph as _detect_bullet_glyph
+from core.style_shared import font_stack_for as _font_stack_for
 
 
 def test_hex_color_from_packed_int():

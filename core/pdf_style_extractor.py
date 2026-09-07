@@ -13,42 +13,12 @@ from collections import Counter
 import pymupdf as fitz
 
 from core.section_matcher import CANONICAL_SECTIONS, match_sections
-
-_FONT_KEYWORDS: list[tuple[tuple[str, ...], str]] = [
-    (("times", "georgia", "garamond", "minion"), "Georgia, 'Times New Roman', Times, serif"),
-    (("helvetica", "arial", "segoe"), "'Helvetica Neue', Helvetica, Arial, sans-serif"),
-    (("futura", "century gothic", "gothic"), "'Century Gothic', Futura, 'Trebuchet MS', sans-serif"),
-    (("courier", "mono"), "'Courier New', Courier, monospace"),
-]
-
-_DEFAULT_SANS = "'Helvetica Neue', Helvetica, Arial, sans-serif"
-_DEFAULT_SERIF = "Georgia, 'Times New Roman', Times, serif"
-
-_BULLET_GLYPHS = ("•", "◦", "▪", "-", "–", "✓")
+from core.style_shared import detect_bullet_glyph, font_stack_for
 
 
 def _hex_color(color_int: int) -> str:
     """Convert PyMuPDF's packed sRGB int (0xRRGGBB) to a CSS hex string."""
     return "#%06x" % (color_int & 0xFFFFFF)
-
-
-def _font_stack_for(font_name: str, is_serif_flag: bool) -> str:
-    """Map a PDF-embedded font name to a safe CSS font-stack, deterministically."""
-    name = (font_name or "").lower()
-    for keywords, stack in _FONT_KEYWORDS:
-        if any(k in name for k in keywords):
-            return stack
-    return _DEFAULT_SERIF if is_serif_flag else _DEFAULT_SANS
-
-
-def _detect_bullet_glyph(texts: list[str]) -> str:
-    """Return the most common leading bullet glyph across a list of line texts."""
-    counts: Counter[str] = Counter()
-    for text in texts:
-        stripped = text.strip()
-        if stripped and stripped[0] in _BULLET_GLYPHS:
-            counts[stripped[0]] += 1
-    return counts.most_common(1)[0][0] if counts else "•"
 
 
 def _detect_alignment(bbox: tuple[float, float, float, float], page_width: float) -> str:
@@ -121,11 +91,11 @@ def extract_style_profile(pdf_bytes: bytes) -> tuple[dict, list[str]]:
 
     heading_font, body_font = heading_spans[0], (body_spans[0] if body_spans else heading_spans[0])
     fonts = {
-        "heading": _font_stack_for(heading_font["font"], bool(heading_font["flags"] & 4)),
-        "body": _font_stack_for(body_font["font"], bool(body_font["flags"] & 4)),
+        "heading": font_stack_for(heading_font["font"], bool(heading_font["flags"] & 4)),
+        "body": font_stack_for(body_font["font"], bool(body_font["flags"] & 4)),
     }
 
-    bullet_glyph = _detect_bullet_glyph([s["text"] for s in body_spans])
+    bullet_glyph = detect_bullet_glyph([s["text"] for s in body_spans])
 
     top_heading = min(heading_spans, key=lambda s: s["bbox"][1])
     page_width = doc[0].rect.width

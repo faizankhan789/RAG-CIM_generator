@@ -22,7 +22,7 @@ _DB_CONFIG = {
     "autocommit": True,
     "charset": "utf8mb4",
     "cursorclass": pymysql.cursors.DictCursor,
-    "connect_timeout": 10,
+    "connect_timeout": 3,
 }
 
 
