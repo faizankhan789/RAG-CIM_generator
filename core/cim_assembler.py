@@ -31,6 +31,24 @@ _C_RE = re.compile(
 
 _FALLBACK_INDUSTRY = "PRIVATE BUSINESS SALE"
 
+_ROMAN_NUMERALS = [
+    (1000, "M"), (900, "CM"), (500, "D"), (400, "CD"),
+    (100, "C"), (90, "XC"), (50, "L"), (40, "XL"),
+    (10, "X"), (9, "IX"), (5, "V"), (4, "IV"), (1, "I"),
+]
+
+
+def _to_roman(n: int) -> str:
+    """Convert a 1-based section position to a roman numeral. The prompt caps
+    the section list at 10 (X), but the full symbol table is included so this
+    is correct for any n, not just the current cap."""
+    result = ""
+    for value, symbol in _ROMAN_NUMERALS:
+        while n >= value:
+            result += symbol
+            n -= value
+    return result
+
 
 def _build_logo_html(logo_b64: str, logo_mime: str) -> str:
     """Build the logo <img> tag from real fetched logo bytes — moved here from
@@ -62,9 +80,18 @@ def _parse_stats(marker_text: str) -> str:
 def _parse_sections(marker_text: str) -> list[dict]:
     sections: list[dict] = []
     matched_spans: list[tuple[int, int]] = []
-    for match in _SECTION_RE.finditer(marker_text):
+    for position, match in enumerate(_SECTION_RE.finditer(marker_text), start=1):
+        llm_num = match.group("num").strip()
+        correct_num = _to_roman(position)
+        if llm_num != correct_num:
+            log.error(
+                "cim_assembler: SECTION num=%r out of sequence (expected %r after "
+                "skips), renumbering — the prompt's contiguous-renumbering rule is "
+                "advisory only, this is the enforcement",
+                llm_num, correct_num,
+            )
         sections.append({
-            "num": match.group("num").strip(),
+            "num": correct_num,
             "title": match.group("title").strip(),
             "body_html": match.group("body").strip(),
         })

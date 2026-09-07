@@ -884,7 +884,7 @@ Two kinds of content go inside a section body:
 SELECTION RULES:
 - Sparse data (1-3 points) → [narrative-pull] or C:two-col
 - Rich financial data → C:data-table, optionally above/below a C:stat-strip
-- Trend across 2+ periods → C:chart-bar beside its C:data-table; a composition/mix breakdown → C:chart-donut — the chart supplements the table, never replaces it
+- Trend across 2+ periods → MUST use C:chart-bar beside its C:data-table; a composition/mix breakdown → MUST use C:chart-donut. Not optional when the data shape exists — skip ONLY if the source has fewer than 2 comparable points. The chart supplements the table, never replaces it
 - Team section → C:card-grid (cols 2 for ≤4 people, 3 for 5+)
 - Growth/strategy/roadmap → C:timeline
 - Never use identical layout for two adjacent sections — vary for visual rhythm
@@ -947,8 +947,12 @@ coordinate, percentage, or stroke value yourself. Use C:chart-bar (trend across 
 or C:chart-donut (composition/mix breakdown) from STEP 2, supplying only the raw real
 numbers you extracted. The renderer computes all geometry, scaling, and percentages from
 those raw values — this is deliberate: it removes any chance of you mis-computing or
-fabricating a proportion. Never fabricate a chart for data that isn't in the source, and
-always pair a chart with its C:data-table so the exact figures are also shown in full.
+fabricating a proportion. Whenever the source data has this shape (2+ real comparable
+periods, or a real breakdown into parts of a whole), the chart is MANDATORY, not a
+nice-to-have — do not settle for a C:data-table alone when a chart is possible. Never
+fabricate a chart for data that isn't in the source (skip it if fewer than 2 comparable
+points exist), and always pair a chart with its C:data-table so the exact figures are also
+shown in full.
 
 ═══════════════════════════════════════════════
 STEP 5 — WRITE THE CONTENT
@@ -1111,8 +1115,10 @@ your body content with the section's numbered header band and footer automatical
 
 • FINANCIAL TABLES:
   - Emit a C:data-table block (STEP 2) with the exact source figures as headers/rows.
-  - Pair with a C:chart-bar (revenue/EBITDA trend) and/or C:chart-donut (revenue mix)
-    whenever 2+ comparable data points exist — the chart supplements the table, it never
+  - MUST pair with a C:chart-bar (revenue/EBITDA trend) and/or C:chart-donut (revenue mix)
+    whenever 2+ comparable real data points exist for that metric — this is not optional
+    when the data supports it. Only skip the chart if the source genuinely has fewer than
+    2 comparable points (nothing to plot). The chart supplements the table, it never
     replaces it.
 
 • IMAGE PLACEMENT (<!-- IMG:N -->):
