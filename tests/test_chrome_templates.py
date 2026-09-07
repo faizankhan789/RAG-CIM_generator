@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pytest
 
-from core.chrome import classic, editorial, luxury, minimalist, startup
+from core.chrome import broker, classic, editorial, luxury, minimalist, startup
 from core.chrome import get_renderer
 
 SAMPLE_SECTIONS = [
@@ -30,6 +30,7 @@ RENDER_MODULES = {
     "editorial": editorial,
     "luxury": luxury,
     "startup": startup,
+    "broker": broker,
 }
 
 

@@ -132,31 +132,28 @@ def _as_number(value: Any, what: str) -> float:
 # ═══════════════════════════════════════════════
 
 def stat_strip(payload: Any, palette: dict) -> str:
+    """Fact-card grid — a muted light card per stat, wrapping in a responsive
+    grid (not a fixed-column flex row), label above value. Ported from a
+    reference business-broker teaser's `.fact-grid`/`.fact-card` style."""
     _require(isinstance(payload, list) and payload, "stat-strip: payload must be a non-empty list")
     cards = []
     for item in payload:
         _require(isinstance(item, dict), "stat-strip: each item must be an object")
         _require("label" in item and "value" in item, "stat-strip: each item needs label and value")
+        icon_html = icon(item.get("icon", ""), palette["accent"], size=18)
+        icon_row = f'<div style="margin-bottom:0.4rem;">{icon_html}</div>' if icon_html else ""
         cards.append(f"""
-        <div style="flex:1 1 0;min-width:0;text-align:center;padding:0 1rem;">
-            {icon(item.get("icon", ""), palette["accent"], size=24)}
-            <div style="margin-top:0.5rem;font-size:0.75rem;text-transform:uppercase;
-                letter-spacing:0.06em;color:rgba(255,255,255,0.75);overflow-wrap:break-word;
+        <div style="min-width:0;background:{palette["light"]};border-radius:8px;padding:0.875rem 1rem;">
+            {icon_row}<div style="font-size:0.7rem;text-transform:uppercase;
+                letter-spacing:0.08em;color:{palette["mid"]};margin-bottom:0.25rem;overflow-wrap:break-word;
                 word-break:break-word;">{esc(item["label"])}</div>
-            <div style="font-size:1.5rem;font-weight:700;color:#fff;
+            <div style="font-size:1.05rem;font-weight:700;color:{palette["primary"]};line-height:1.3;
                 font-variant-numeric:tabular-nums;overflow-wrap:break-word;
                 word-break:break-word;">{esc(item["value"])}</div>
         </div>""")
-    # interleave cards and dividers
-    row = []
-    for i, card in enumerate(cards):
-        row.append(card)
-        if i < len(cards) - 1:
-            row.append('<div style="width:1px;flex-shrink:0;background:rgba(255,255,255,0.15);"></div>')
     return (
-        f'<div style="display:flex;flex-wrap:wrap;align-items:center;gap:0.5rem;'
-        f'background:{palette["primary"]};border-radius:12px;padding:1.5rem 1rem;">'
-        f'{"".join(row)}</div>'
+        '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));'
+        f'gap:0.75rem;">{"".join(cards)}</div>'
     )
 
 

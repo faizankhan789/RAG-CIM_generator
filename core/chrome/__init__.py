@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Callable
 
-from core.chrome import classic, editorial, luxury, minimalist, startup
+from core.chrome import broker, classic, editorial, luxury, minimalist, startup
 
 RENDERERS: dict[str, Callable[..., str]] = {
     "classic": classic.render,
@@ -16,6 +16,7 @@ RENDERERS: dict[str, Callable[..., str]] = {
     "editorial": editorial.render,
     "luxury": luxury.render,
     "startup": startup.render,
+    "broker": broker.render,
 }
 
 _MODULES = {
@@ -23,6 +24,7 @@ _MODULES = {
     "editorial": editorial,
     "luxury": luxury,
     "startup": startup,
+    "broker": broker,
 }
 
 

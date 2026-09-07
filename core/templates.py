@@ -277,6 +277,35 @@ TEMPLATES: dict[str, dict[str, Any]] = {
             "X. Appendix": "Appendix",
         },
     },
+    "broker": {
+        "id": "broker",
+        "name": "Business Broker",
+        "tagline": "Deal-teaser style — forest green & gold, serif/sans pairing.",
+        "allow_brand_override": False,
+        "palette": {
+            "primary": "#1B4332", "accent": "#B8953A",
+            "light": "#F7F4EF", "mid": "#64748B",
+        },
+        "fonts": {
+            "heading": "'Playfair Display', Georgia, serif",
+            "body": "'Inter', 'Segoe UI', Arial, sans-serif",
+        },
+        "layout_notes": None,
+        "cover_override": None,
+        "section_header_override": None,
+        "headings": {
+            "I. Executive Summary": "Deal Snapshot",
+            "II. Company Overview": "The Business",
+            "III. Financial Information": "Financial Performance",
+            "IV. Operations": "Operations",
+            "V. Marketing and Sales": "Market Position",
+            "VI. Legal and Regulatory": "Legal & Compliance",
+            "VII. Human Resources": "Leadership & Staff",
+            "VIII. Growth Opportunities": "Growth Opportunities",
+            "IX. Risks": "Risk Considerations",
+            "X. Appendix": "Supporting Documents",
+        },
+    },
 }
 
 DEFAULT_TEMPLATE_ID = "classic"

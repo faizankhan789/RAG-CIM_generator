@@ -25,7 +25,9 @@ _SECTION_RE = re.compile(
     re.DOTALL,
 )
 _ANY_SECTION_OPEN_RE = re.compile(r"<!--\s*SECTION\b")
-_C_RE = re.compile(r"<!--\s*C:(?P<type>[\w-]+)\s*-->(?P<payload>.*?)<!--\s*/C\s*-->", re.DOTALL)
+_C_RE = re.compile(
+    r"<!--\s*C:(?P<type>[\w-]+)\s*-->(?P<payload>.*?)<!--\s*/C(?::[\w-]+)?\s*-->", re.DOTALL
+)
 
 _FALLBACK_INDUSTRY = "PRIVATE BUSINESS SALE"
 

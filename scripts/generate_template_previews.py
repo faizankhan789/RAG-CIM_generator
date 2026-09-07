@@ -13,12 +13,14 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
+from datetime import date
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dotenv import load_dotenv
 load_dotenv()
 
+from core.cim_assembler import assemble
 from core.llm import generate_cim_html
 from core.templates import TEMPLATES
 
@@ -99,13 +101,19 @@ async def _main() -> None:
     os.makedirs("previews", exist_ok=True)
     for template_id in TEMPLATES:
         print(f"Generating preview for '{template_id}'...")
-        html = await generate_cim_html(
+        marker_text = await generate_cim_html(
             all_findings=[DEMO_FINDINGS],
             listing_xml="",
             listing_name=DEMO_LISTING_NAME,
             asking_price=DEMO_ASKING_PRICE,
             all_images=[],
             template_id=template_id,
+        )
+        # Built-in templates return raw marker text — same assemble() call
+        # nodes/formatter.py makes in production, so previews match reality.
+        html = assemble(
+            marker_text, template_id, DEMO_LISTING_NAME, DEMO_ASKING_PRICE,
+            date_str=date.today().strftime("%B %d, %Y"),
         )
         out_path = os.path.join("previews", f"{template_id}.html")
         with open(out_path, "w") as f:
