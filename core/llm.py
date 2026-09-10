@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextvars
 import io
 import logging
 import os
@@ -21,23 +22,29 @@ MODEL = os.environ["CIM_MODEL"]  # set in .env or deployment env vars
 MAX_TOKENS = 8192
 MAX_HTML_TOKENS = 64000  # Haiku 4.5's actual max_tokens ceiling (verified via Models API)
 
-# Global token accumulator — shared across all tasks in the process.
-# reset_token_counters() called at pipeline start; get_token_counts() at end.
-_tokens: dict[str, int] = {"input": 0, "output": 0}
+# Per-pipeline token accumulator. A ContextVar (not a plain global) so that
+# concurrent pipeline runs — one asyncio task per listing_id, see
+# server._run_job_pipeline — each keep their own counts instead of clobbering
+# one shared dict. reset_token_counters() installs a fresh dict at pipeline
+# start; tasks spawned afterwards (graph nodes, extraction calls) inherit it
+# through the copied context and mutate it in place.
+_tokens_var: contextvars.ContextVar[dict[str, int]] = contextvars.ContextVar("cim_token_counts")
 
 
 def reset_token_counters() -> None:
-    _tokens["input"] = 0
-    _tokens["output"] = 0
+    _tokens_var.set({"input": 0, "output": 0})
 
 
 def get_token_counts() -> tuple[int, int]:
-    return _tokens["input"], _tokens["output"]
+    t = _tokens_var.get(None)
+    return (t["input"], t["output"]) if t is not None else (0, 0)
 
 
 def _add_tokens(input_t: int, output_t: int) -> None:
-    _tokens["input"]  += input_t
-    _tokens["output"] += output_t
+    t = _tokens_var.get(None)
+    if t is not None:
+        t["input"]  += input_t
+        t["output"] += output_t
 
 # Max concurrent LLM extraction calls (env-tunable, default 5)
 _LLM_CONCURRENCY = int(os.getenv("LLM_CONCURRENCY", "5"))
