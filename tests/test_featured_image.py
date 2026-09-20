@@ -112,10 +112,10 @@ async def test_both_prompts_ban_absolute_positioning_for_content_images():
     """Static regression guard: whichever prompt variant is active, the LLM is
     told content images must stay in normal flow. Without this, a future edit
     to either prompt could silently reopen the overlap bug class for images."""
-    from core.llm import _HTML_PROMPT, _MARKER_PROMPT
+    from core.llm import _CUSTOM_TEMPLATE_PROMPT, _MARKER_PROMPT
 
-    assert "position:absolute" in _HTML_PROMPT
-    assert "content image" in _HTML_PROMPT
+    assert "position:absolute" in _CUSTOM_TEMPLATE_PROMPT
+    assert "content image" in _CUSTOM_TEMPLATE_PROMPT
 
     assert "position:absolute" in _MARKER_PROMPT
     assert "SECTION" in _MARKER_PROMPT

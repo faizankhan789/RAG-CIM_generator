@@ -153,45 +153,48 @@ async def test_docx_without_embedded_image_attaches_no_image_block():
 
 
 @pytest.mark.asyncio
-async def test_custom_template_prompt_puts_uploaded_design_ahead_of_default_spec():
-    """Static regression guard for the fidelity-priority fix: the composed prompt
-    for a custom-template job must state the uploaded file's design outranks this
-    prompt's own generic default spec, not just carry color/font overrides. Without
-    this, the default 'PAGE 1 — COVER' etc. specs are so much more detailed than a
-    short override that they win the model's attention regardless of what's uploaded."""
+async def test_custom_template_prompt_has_no_competing_default_design_spec():
+    """Static regression guard for the "no deterministic default design" fix:
+    the composed prompt for a custom-template job must NOT carry a default
+    visual design (cover/TOC/section-header/footer specs) alongside the
+    override — that's what caused two real bugs (Kline Paper CIM: gradient
+    cover + colored section-header band, neither present in the real file)
+    even with an explicit override describing something else. The uploaded
+    file (attached separately) plus the MANDATORY TEMPLATE OVERRIDE are now
+    the only source of visual design; there must be nothing left in the base
+    prompt for them to compete with."""
     import base64
     html_b64 = base64.standard_b64encode(make_text_html()).decode()
     content = await _run(_template_with(html_b64, "html"))
 
     prompt_blocks = [
         b for b in content
-        if b.get("type") == "text" and "PRIORITY ORDER FOR THIS JOB" in b.get("text", "")
+        if b.get("type") == "text" and "MANDATORY TEMPLATE OVERRIDE" in b.get("text", "")
     ]
     assert len(prompt_blocks) == 1
     prompt_text = prompt_blocks[0]["text"]
 
-    # The priority statement must precede the fallback spec it's overriding —
-    # ordering matters for how much attention a long prompt gives it (primacy).
-    priority_pos = prompt_text.index("PRIORITY ORDER FOR THIS JOB")
-    fallback_pos = prompt_text.index("PAGE 1 — COVER")
-    assert priority_pos < fallback_pos
+    # None of the old hardcoded default-design sections may appear anywhere in the prompt.
+    for removed_default in (
+        "PAGE 1 — COVER", "PAGE 2 — TABLE OF CONTENTS", "KEY METRICS STRIP",
+        "CONTENT SECTIONS — LAYOUT", "SECTION HEADER:", "SECTION FOOTER", "LAST PAGE — DISCLAIMER",
+        "Full-width band: gradient",
+    ):
+        assert removed_default not in prompt_text
 
-    # Explicitly names every fallback section it demotes, not just the cover.
-    for demoted_section in ("PAGE 1 — COVER", "PAGE 2 — TABLE OF CONTENTS", "KEY METRICS",
-                             "CONTENT SECTIONS", "SECTION FOOTER"):
-        assert demoted_section in prompt_text
-
-    # Data-accuracy rules must remain untouched — the priority-order rewrite is
-    # scoped to visual design only, never to relaxing the anti-fabrication rules.
+    # Content/data-accuracy rules must remain untouched — removing the default design
+    # spec is scoped to visual design only, never to relaxing the anti-fabrication rules
+    # or the 10-section content backbone.
     assert "FINANCIAL NUMBER RULES" in prompt_text
     assert "CRITICAL DATA RULES" in prompt_text
+    assert "CIM STRUCTURE — 10 SECTIONS" in prompt_text
 
 
 @pytest.mark.asyncio
-async def test_builtin_template_path_never_gets_the_custom_fidelity_prefix():
-    """The priority-order prefix is specific to the uploaded-file job — the 5
-    built-in templates (marker path, chrome-rendered) have no uploaded file to
-    prioritize and must never see this text."""
+async def test_builtin_template_path_never_gets_the_custom_template_prompt():
+    """The custom-template prompt (design attached separately, no default
+    spec) is specific to the uploaded-file job — the 5 built-in templates
+    (marker path, chrome-rendered) must never see it."""
     captured: dict = {}
     with patch("core.llm.get_client", return_value=_fake_client(captured)):
         await generate_cim_html(
@@ -203,7 +206,7 @@ async def test_builtin_template_path_never_gets_the_custom_fidelity_prefix():
             custom_template=None,
         )
     content = captured["messages"][0]["content"]
-    assert not [b for b in content if "PRIORITY ORDER FOR THIS JOB" in b.get("text", "")]
+    assert not [b for b in content if "MANDATORY TEMPLATE OVERRIDE" in b.get("text", "")]
 
 
 @pytest.mark.asyncio

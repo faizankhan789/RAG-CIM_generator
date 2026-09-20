@@ -334,8 +334,8 @@ class TestAuditDrivenCoverAndLayoutDirectives:
         text = _audit_cover_directive(self._PHOTO_COVER_AUDIT)
         assert "photo" in text
         assert "background or gradient" not in text  # sanity: no accidental literal match
-        # "band" only appears inside the explicit prohibition sentence, never as a positive claim.
-        assert "does not apply to this template" in text
+        # "band"/"gradient" only appear inside the explicit prohibition sentence, never as a positive claim.
+        assert "do not default to a flat gradient" in text.lower()
 
     def test_audit_cover_directive_instructs_a_real_photo_not_a_flat_fill(self):
         text = _audit_cover_directive(self._PHOTO_COVER_AUDIT)
@@ -343,14 +343,14 @@ class TestAuditDrivenCoverAndLayoutDirectives:
         assert "never substitute a solid-color or gradient" in text
 
     def test_audit_cover_directive_explicitly_bans_default_gradient_when_audit_gives_none(self):
-        """Regression guard for the O'Sarracino case: has_image=True but the
-        base prompt's own default cover spec still has a gradient fallback —
-        a purely descriptive override never said "no gradient", so Claude
-        kept the default gradient anyway (no real listing photos were
-        available to satisfy the photo instruction). The override must now
-        explicitly rule the default gradient out."""
+        """Regression guard for the O'Sarracino case: has_image=True but no
+        real listing photo was available (image pipeline failed) — a purely
+        descriptive override never said "no gradient", so Claude fabricated
+        one anyway. The override must now explicitly rule a fallback
+        gradient out and prefer a plain background instead."""
         text = _audit_cover_directive(self._PHOTO_COVER_AUDIT)
-        assert "do not use the default cover spec" in text.lower()
+        assert "do not default to a flat gradient" in text.lower()
+        assert "plain light or white background" in text.lower()
 
     def test_audit_section_header_directive_describes_bordered_box_and_bans_default_band(self):
         text = _audit_section_header_directive(self._PHOTO_COVER_AUDIT)

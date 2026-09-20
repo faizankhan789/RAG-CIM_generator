@@ -253,106 +253,48 @@ async def extract_from_content(
 
 # ── Final HTML generation ─────────────────────────────────────────────────────
 
-# Prepended ONLY for the custom-template (uploaded PDF/Word/HTML/XML) path, before
-# _HTML_PROMPT's own text. Placed first for primacy (the first thing read in a long
-# prompt gets disproportionate weight) — _build_template_directive() below restates
-# the same priority at the very end of the prompt for recency, sandwiching _HTML_PROMPT's
-# generic spec between two statements that it is a fallback, not the target design.
-#
-# Why this exists: _HTML_PROMPT below is an extremely detailed, opinionated default CIM
-# design (exact rem sizes, a specific cover badge-pill/gradient/decorative-shape treatment,
-# a specific TOC style, a specific key-metrics-strip design, per-section-type layout rules,
-# a specific footer). That level of detail reliably wins the model's attention over a much
-# shorter "match the uploaded template" instruction appended after it — the net effect,
-# without this prefix, is a CIM that uses the uploaded template's COLORS but is still
-# structurally the same generic default design. This block exists to stop that: it names
-# every specific default-design section below and tells the model up front that all of them
-# are fallback-only for whatever the uploaded reference doesn't show, never the target.
-_CUSTOM_TEMPLATE_FIDELITY_PREFIX = """\
-═══════════════════════════════════════════════
-PRIORITY ORDER FOR THIS JOB — READ BEFORE STEP 1
-═══════════════════════════════════════════════
-The user uploaded their own design template (attached below as a real file/image, plus a
-deterministic color/font extraction). Your job is to make the generated CIM's VISUAL DESIGN
-match that uploaded template as closely as you can — not a generic premium-bank look, not
-this prompt's own default design. This applies to structure and composition, not just color:
-cover composition and content order, typographic scale and weight, spacing/density, how
-section headers are treated, whether there's a decorative element at all, image treatment,
-table styling, list/bullet style — everything visual.
+# The custom-template (uploaded PDF/Word/HTML/XML) path's own prompt — used ONLY when the
+# user uploaded their own design file (see generate_cim_html's is_custom branch). Carries
+# content/data/technical RULES only — never a default visual design. It used to also carry
+# (under the old name _HTML_PROMPT) an extremely detailed, opinionated DEFAULT design spec —
+# exact cover gradient, a specific TOC style, a hardcoded "full-width band" section-header
+# treatment, per-section-type rem sizes and colors — sent alongside an override telling
+# Claude to ignore it in favor of the uploaded file. Two competing design instructions in one
+# prompt reliably meant Claude honored both at once. Real repro: the Kline Paper CIM (photo
+# cover, no color band anywhere in the real file) still came out with a flat gradient cover
+# and a full-width colored section-header band, because that default spec was still being
+# said out loud even though the override also fired. The uploaded file itself (attached
+# separately, see _build_template_reference_blocks) plus the MANDATORY TEMPLATE OVERRIDE
+# (_build_template_directive, appended after this prompt) are now the ONLY source of visual
+# design for a custom-template job — nothing left in this prompt to compete with them.
+_CUSTOM_TEMPLATE_PROMPT = """\
+You are building a Confidential Information Memorandum (CIM). The user uploaded their own
+design template — attached separately below (as a real vision/document reference, or inlined
+as text/markup) — and it is the ONLY source of this document's visual design: cover
+composition, color palette, typography, section-header treatment, spacing, decorative
+elements, table/list styling, everything visual. There is no default design in this prompt to
+fall back on. Study the attached file (and the MANDATORY TEMPLATE OVERRIDE appended after this
+prompt, which describes that same file in more structured detail) and reproduce its actual
+look, adapting only as needed to fit the real content below — never invent a generic "premium
+investment-bank CIM" look of your own.
 
-Everything below this line — "PAGE 1 — COVER", "PAGE 2 — TABLE OF CONTENTS", "KEY METRICS
-STRIP", "CONTENT SECTIONS — LAYOUT", "SECTION FOOTER", "LAST PAGE — DISCLAIMER", and STEP 2's
-industry color palettes and icon/chart specifics — is a FALLBACK DESIGN, not a mandate. Use
-it only to fill in what the uploaded template genuinely doesn't show or that doesn't apply
-(e.g. it has no financial-table example, or no SWOT layout, or the content needs a component
-type the template happens not to demonstrate). Wherever the uploaded template shows its own
-clear approach to something below — a different cover layout, no badge pill, no decorative
-gradient shapes, a plainer or busier section header, a different typographic hierarchy, a
-sidebar, whatever it actually does — follow the uploaded template, not the fallback text.
-Concretely: if the uploaded template's cover is a simple centered title on a white page with
-no gradient background, do NOT still give it a dark gradient cover with a badge pill just
-because that's what the fallback spec below describes — reproduce the uploaded template's
-actual simpler design instead.
-
-This priority rule is about visual design only. Every content/data rule elsewhere in this
-prompt (the section structure, the 10-section content backbone, and especially the CRITICAL
-DATA RULES and FINANCIAL NUMBER RULES about never inventing, rounding, or fabricating a
-number) is absolute regardless of the template — visual fidelity to the upload never means
-copying its numbers, names, or wording. The technical correctness rules (self-contained CSS,
-no external resources, print/page-break rules, text-contrast minimums, SVG icon sizing) also
-still apply no matter what the uploaded template looks like — those prevent the output from
-being broken, not from looking like the fallback design.
-
-"""
-
-_HTML_PROMPT = """\
-You are a world-class investment banking designer creating a stunning, print-ready Confidential Information Memorandum (CIM).
-This document must look like it came from Goldman Sachs or Lazard — polished, premium, visually compelling.
+This is about visual design only. Every rule below — the 10-section content backbone, and
+especially the CRITICAL DATA RULES and FINANCIAL NUMBER RULES about never inventing,
+rounding, or fabricating a number — is absolute regardless of the uploaded template's design.
+Visual fidelity to the upload never means copying its own numbers, names, or wording: every
+word and figure in your output comes from the real listing data provided below, never from
+the reference file.
 
 ═══════════════════════════════════════════════
-STEP 1 — DETECT INDUSTRY
-═══════════════════════════════════════════════
-Identify the business type from the content. Examples:
-Hotel/Hospitality, Restaurant/Food & Beverage, Travel & Tourism, Healthcare, Technology/SaaS,
-Retail, Manufacturing, Real Estate, Education, Logistics, Professional Services, E-commerce.
-
-═══════════════════════════════════════════════
-STEP 2 — CHOOSE DESIGN SYSTEM
-═══════════════════════════════════════════════
-⚑ BRAND COLORS: If a "Brand Colors" block appears in your input, use those hex values
-  as primary and accent. Derive light (primary at ~5% opacity over white) and mid
-  (midpoint blend of primary + accent). Do NOT use the industry defaults below in that case.
-
-Fallback industry palettes (use ONLY if no brand colors provided):
-- Hotel/Hospitality     → primary:#1a0a0e  accent:#b8902a  light:#fdf6ec  mid:#6b1f2a   — opulent, serif-inspired
-- Restaurant/Food       → primary:#1c0f0a  accent:#c9622a  light:#fef9f5  mid:#7a3520   — warm, bold, appetising
-- Travel/Tourism        → primary:#021e35  accent:#e6a817  light:#f0f8ff  mid:#0d4f72   — adventurous, bright
-- Healthcare            → primary:#041f1f  accent:#1fa37a  light:#f5fffd  mid:#1a6b6b   — clinical, trustworthy
-- Technology/SaaS       → primary:#07080f  accent:#6366f1  light:#f5f6ff  mid:#0f172a   — modern, sharp
-- Retail                → primary:#180d06  accent:#e05c2a  light:#fff8f5  mid:#2d3748   — energetic, commercial
-- Real Estate           → primary:#0a1a0f  accent:#c9973a  light:#f8fbf4  mid:#1a4731   — prestigious, grounded
-- Manufacturing         → primary:#0d1117  accent:#e67e22  light:#fafafa  mid:#2c3e50   — industrial, confident
-- Education             → primary:#0a1229  accent:#f59e0b  light:#fffdf0  mid:#1e3a8a   — academic, approachable
-- Professional Services → primary:#0f1117  accent:#64748b  light:#f8fafc  mid:#1f2937   — understated authority
-- If no match: pick an appropriate premium dark primary + gold/warm accent
-
-Industry KPIs — use ONLY metrics actually present in the data:
-- Hotel: RevPAR, ADR, Occupancy %, Total Keys, F&B Revenue, GOP Margin, Star Rating
-- Restaurant: Covers/Day, Avg Check, COGS%, Labour%, Seat Turns, Cuisine, Seating Capacity
-- Travel: Booking Volume, Destinations, Repeat Rate, Package Types, Peak Season
-- SaaS/Tech: ARR/MRR, Churn, CAC, LTV, NPS, Gross Margin, DAU/MAU
-- Healthcare: Patient Volume, Procedures/Day, Payer Mix, Certifications
-- Retail: Same-Store Sales, Inventory Turns, SKU Count, Basket Size
-- Real Estate: Cap Rate, NOI, Occupancy %, Lease Terms, Price/SqFt
-
-═══════════════════════════════════════════════
-STEP 2b — SECTION LAYOUT COMPONENTS
+SECTION LAYOUT COMPONENTS
 ═══════════════════════════════════════════════
 For each section body, pick component(s) from this library based on data volume and type.
-Do NOT force a fixed layout — adapt to what the data actually supports.
+Do NOT force a fixed layout — adapt to what the data actually supports, and style every
+component to match the uploaded reference file's own visual language (colors, corner radius,
+borders, density, decoration), never a generic default look.
 
 COMPONENT LIBRARY:
-▸ [stat-strip]      Horizontal KPI cards on dark background, each topped with a matching ICON SYSTEM glyph. Use when 3+ numeric metrics exist.
+▸ [stat-strip]      Horizontal KPI cards, each topped with a matching ICON SYSTEM glyph. Use when 3+ numeric metrics exist.
 ▸ [narrative-pull]  Large pull-quote paragraph with accent left-border. For text-rich, metric-light sections.
 ▸ [two-col-60-40]   Left 60% narrative + right 40% highlight box. Good for overview/intro sections.
 ▸ [two-col-50-50]   Equal columns. Use when two equally weighted topics exist side by side.
@@ -377,7 +319,7 @@ SELECTION RULES:
 - Combine freely: e.g. [stat-strip] + [two-col-60-40] + [data-table] all in one section
 
 ═══════════════════════════════════════════════
-STEP 2c — ICON SYSTEM
+ICON SYSTEM
 ═══════════════════════════════════════════════
 A fixed set of inline monoline SVG icons. Copy the markup below VERBATIM (only the wrapping
 <svg> tag's width/height/color may change, via CSS) — never redraw a path or invent a new
@@ -394,8 +336,9 @@ Icon usage is DELIBERATE, not decorative. Use icons ONLY in these places:
    both on the same li renders two competing markers side by side, out of alignment with
    each other — this is a common, easy-to-miss bug; check every [bullet-list] block for it.
 3. Executive Summary / Investment Highlights list items — the `check` icon replaces the dot.
-4. The SECTION FOOTER (see below) — the `lock` icon beside "STRICTLY PRIVATE & CONFIDENTIAL",
-   only where the active template's style rules don't forbid extra ornamentation.
+4. A section footer, if the reproduced design uses one — the `lock` icon beside any
+   "confidential" notice, only where the reference file's own style doesn't forbid
+   extra ornamentation.
 Do NOT scatter icons through body paragraphs, table cells, or section header bands — that
 reads as a generic template, not a bank-grade CIM.
 
@@ -443,7 +386,7 @@ syntax (stroke-dasharray, stroke-dashoffset, donut arcs) into an icon glyph.
   <svg ...><polygon points="12 2 15 9 22 9 16.5 13.5 18.5 21 12 16.5 5.5 21 7.5 13.5 2 9 9 9"/></svg>
 
 ═══════════════════════════════════════════════
-STEP 2d — SVG CHART LIBRARY (real, data-accurate charts)
+SVG CHART LIBRARY (real, data-accurate charts)
 ═══════════════════════════════════════════════
 Whenever a section has 2+ periods of the same metric (e.g. 3 years of revenue) OR a
 breakdown into 2+ parts of a whole (e.g. revenue by segment), render it as an inline SVG
@@ -451,7 +394,7 @@ chart alongside its [data-table] — never fabricate a chart for data that isn't
 source, and never let the chart be the ONLY place the exact numbers appear. Compute every
 coordinate below from the real extracted numbers — never eyeball or approximate proportions.
 Zero external chart libraries, zero <canvas>, zero JS — pure inline <svg>.
-Every chart's outer <svg> tag (same rule as ICON SYSTEM, STEP 2c) needs explicit sizing —
+Every chart's outer <svg> tag (same rule as ICON SYSTEM above) needs explicit sizing —
 either a `width`/`height` attribute or a CSS rule with `width`/`height` (e.g. `width:100%;
 height:auto;` so it fills its column) — an <svg> with only a `viewBox` and no `width`/`height`
 anywhere still defaults to the browser's native 300×150px, distorting the chart.
@@ -486,21 +429,29 @@ anywhere still defaults to the browser's native 300×150px, distorting the chart
   - Percentages MUST sum to ~100% and MUST be derived from real source figures (compute from
     raw revenue amounts if the source gives amounts, not %) — never invented splits.
 
-Respect the active template's fill/style rules (STEP 2 palette + any MANDATORY TEMPLATE
-OVERRIDE below) when rendering charts and icons: flat single-color fills where a template
-forbids gradients/shadows, gradient fills where a template calls for them, etc.
+Respect the uploaded reference file's own fill/style conventions (per the MANDATORY TEMPLATE
+OVERRIDE below) when rendering charts and icons: flat single-color fills where the reference
+avoids gradients/shadows, gradient fills where it uses them, etc.
 
 ═══════════════════════════════════════════════
-STEP 3 — BUILD THE DOCUMENT
+BUILD THE DOCUMENT
 ═══════════════════════════════════════════════
 
 CRITICAL DATA RULES:
 - Copy ALL financial figures, percentages, dates EXACTLY as they appear in the source data — never round, abbreviate, or infer.
 - Include ONLY sections where you have actual data — skip sections with no content. If you skip a section, you MUST also remove its entry from the TABLE OF CONTENTS and renumber the remaining Roman numerals — a TOC entry with no matching rendered section is a bug.
 - Never invent metrics, names, or figures not present in the source data.
-- STRICT STRUCTURE: Generate ONLY sections I through X as defined above. Do NOT create any section, heading, or topic outside this list. No bonus sections, no summaries, no additional pages beyond Cover, TOC, sections I–X, and Disclaimer.
+- STRICT STRUCTURE: Generate ONLY sections I through X as defined below. Do NOT create any section, heading, or topic outside this list. No bonus sections, no summaries, no additional pages beyond Cover, TOC, sections I–X, and a closing disclaimer page.
 - IGNORE internal CRM metadata: do NOT include CRM IDs, usernames, system dates, listing status, campaign IDs, NDA flags, or any other internal admin fields in the document. These are system fields, not business content.
 - EMPTY SUBTOPIC RULE: If a subtopic has no data, omit it entirely — do NOT show a heading with empty or placeholder content.
+- TABLE OF CONTENTS 1:1 MATCH: build the table of contents LAST, after you know which
+  sections you actually rendered. A section with no real data is skipped entirely per the
+  rule above — when that happens, its TOC entry MUST be removed too and the remaining Roman
+  numerals renumbered (I, II, III... with no gap). Never leave a TOC entry with no matching
+  rendered section, and vice versa.
+- CLOSING DISCLAIMER: include a final disclaimer/confidentiality page with standard CIM
+  legal boilerplate (this is content, not a page beyond the ones listed above) — style it
+  consistent with the rest of the reproduced design, never a fixed color scheme of your own.
 
 ⛔ FINANCIAL NUMBER RULES — STRICTLY ENFORCED:
 - Every number, figure, percentage, currency amount, ratio, and date in the output MUST come directly from the source data provided. NO exceptions.
@@ -511,55 +462,6 @@ CRITICAL DATA RULES:
 - FORBIDDEN: projections or forecasts unless explicitly stated in source documents
 - If a financial figure is NOT in the source data, leave that subtopic out entirely — do not substitute, estimate, or approximate.
 - When in doubt: OMIT rather than invent.
-
-━━━━━━━━━━━━━━━━━━━━━━━━
-PAGE 1 — COVER
-━━━━━━━━━━━━━━━━━━━━━━━━
-Full-page cover (min-height:1080px). Structure:
-- Background: diagonal or radial gradient from primary → mid (dark, rich)
-- Decorative geometric shapes: large semi-transparent circles or diagonal bands in accent color, low opacity (0.08–0.15), absolutely positioned — creates depth without clutter
-- Top bar: MUST use `display:flex; justify-content:space-between; align-items:center; width:100%; position:relative; z-index:5`. LEFT side (flex-start): <!-- LOGO --> placeholder (if logo provided) OR empty div. RIGHT side (flex-end): "CONFIDENTIAL INFORMATION MEMORANDUM" in small-caps tracking-widest, accent color, text-align:right. NEVER center either element — logo is strictly left, CIM title is strictly right. Subtle top border in accent color across full width. The top bar's `z-index:5` MUST be higher than any decorative background element on the cover (geometric shapes, gradients, ornamental corner brackets/frames per a template override) — a logo or title rendered behind, touching, or crossing through a decorative line/shape is a critical bug. If this template's cover calls for an ornamental corner frame or brackets, keep them short and inset far enough from the top-left corner (at least the cover's own padding, e.g. 3rem) that they never reach into the top bar's logo/title area.
-- CENTER BLOCK (vertically centered, text-align:center, align-items:center — ALL content MUST be centered horizontally):
-    • Industry badge pill (e.g. "RESTAURANT & FOOD SERVICE") — accent background, white text, rounded-full, uppercase, letter-spacing, margin:0 auto
-    • Business name: massive (4.5rem), white, bold, line-height 1.1, max 2 lines, text-align:center
-    • Tasteful thin horizontal rule in accent color below name, width:80px, margin:0 auto
-    • Tagline or location if available — rgba(255,255,255,0.85) (NEVER lower opacity — must stay clearly readable against the dark cover background), italic, 1.2rem, text-align:center
-    • Asking price block: large accent-colored chip — "Asking Price" label above, price value bold 2.5rem white, centered
-- BOTTOM BAR: dark translucent band across full width, at `z-index:2` — same clearance rule as the top bar: this z-index MUST be higher than any decorative background element on the cover, and if this template's cover calls for an ornamental corner frame or brackets, they must stay clear not just of the top bar but of this bottom bar too. The bar's actual rendered height (padding + line-height, typically 50–60px) is almost always taller than a small fixed corner-bracket inset (e.g. 24px) — a frame/bracket inset sized only for the top corners will sit INSIDE the bottom bar's footprint and visibly collide with it. Either size the frame's bottom edge and bottom corner brackets to clear the bottom bar's full rendered height (not the same fixed inset used for the top/left/right), or draw the frame so its perimeter stops above the bottom bar entirely. A footer bar overlapping a decorative corner line is the same class of critical bug as a logo overlapping one:
-    • Left: "Prepared exclusively for prospective acquirers" — muted italic
-    • Center: current date
-    • Right: "STRICTLY PRIVATE & CONFIDENTIAL"
-- If images are available AND contextually relevant (property, storefront, food, team — NOT random objects, dice, icons, or unrelated images): use <!-- IMG:1 --> as a CSS background on the cover div. NEVER place it as a <figure> or <img> above the top bar. Implementation: the cover div must have position:relative; overflow:hidden. Inside it, as the very first child, place: <div style="position:absolute;top:0;right:0;bottom:0;left:0;z-index:0;"><img src="..." style="width:100%;height:100%;opacity:0.25;"/></div> followed by a <div style="position:absolute;top:0;right:0;bottom:0;left:0;background:rgba(0,0,0,0.50);z-index:1;"></div>. All cover content sits above both of those: center block and bottom bar at z-index:2, and the top bar at its own z-index:5 as specified above (the top bar's z-index is never lowered to 2 just because an image/overlay is present — 5 stays reserved for it alone so it also clears any decorative shapes, which is why they must never share or exceed it). If the image is not contextually relevant (e.g. dice, generic clipart, icons), skip it entirely — use no image rather than a wrong one.
-
-━━━━━━━━━━━━━━━━━━━━━━━━
-PAGE 2 — TABLE OF CONTENTS
-━━━━━━━━━━━━━━━━━━━━━━━━
-Clean, typographically elegant. Full-page feel (min-height:700px, light background).
-- ALL content MUST be left-aligned (text-align:left, align-items:flex-start) — NEVER center the heading or entries.
-- Top: "TABLE OF CONTENTS" heading in primary color, large, bold, text-align:left
-- Thin accent-colored left border OR top border (not centered decoration)
-- Each section: flex row — Roman numeral (accent color, bold, monospace, min-width:3rem), section title (primary, medium weight), dotted leader line flex-grow, page anchor arrow → at right
-- Hover state: background tint, cursor pointer
-- Subtle section groupings if many sections
-- MANDATORY 1:1 MATCH: build the TOC LAST, after you know which sections you actually
-  rendered. A section with no real data is skipped entirely per the "Include ONLY
-  sections where you have actual data" rule below — when that happens, its TOC entry
-  MUST be removed too and the remaining Roman numerals renumbered (I, II, III... with no
-  gap). Never leave a TOC entry (e.g. "Appendix") that has no matching section-header/
-  section-title actually rendered in the body — every heading promised in the TOC must
-  be covered by a real section, and vice versa.
-
-━━━━━━━━━━━━━━━━━━━━━━━━
-KEY METRICS STRIP
-━━━━━━━━━━━━━━━━━━━━━━━━
-Immediately after TOC — a full-width horizontal strip of stat cards (3–6 cards):
-- Background: primary color
-- Each card: a matching ICON SYSTEM glyph above the label (dollar for revenue/EBITDA, trend-up
-  for growth/margin %, building for keys/units/locations, users for headcount, star for rating
-  — pick the closest match, skip the icon rather than force a wrong one), centered, white label
-  (small, uppercase, muted), large white value (bold, 2rem+), optional unit label
-- Cards separated by thin vertical lines
-- Only use metrics actually present in the data
 
 ━━━━━━━━━━━━━━━━━━━━━━━━
 CIM STRUCTURE — 10 SECTIONS
@@ -677,90 +579,6 @@ X. Appendix
    • Product lifecycle analysis
    • Market segmentation map
 
-━━━━━━━━━━━━━━━━━━━━━━━━
-CONTENT SECTIONS — LAYOUT
-━━━━━━━━━━━━━━━━━━━━━━━━
-Each section (id="section-N") follows this pattern:
-
-SECTION HEADER:
-- Full-width band: gradient from primary to mid, padding 2.5rem 3rem
-- Roman numeral (accent, 0.85rem, letter-spacing) above title
-- Section title: white, 2rem, bold
-- Optional 1-line description: rgba(255,255,255,0.85) (NEVER lower opacity), italic, 0.95rem
-- Decorative right-side accent bar or geometric element
-
-SECTION BODY (white or light background, generous padding):
-Use the most appropriate layout for the content type:
-
-• EXECUTIVE SUMMARY / INVESTMENT HIGHLIGHTS:
-  - Opening paragraph: large pull-quote style (1.15rem, line-height 1.8, border-left 4px accent)
-  - Bullet highlights: styled list items, each prefixed by the `check` icon (see ICON SYSTEM)
-    in accent color — not a plain text dot
-
-• FINANCIAL TABLES:
-  - Full-width table, thead: primary bg, white text
-  - Tbody: alternating white / light-bg rows
-  - Numbers: right-aligned, monospace font
-  - Total/summary rows: bold, accent-tinted background
-  - Currency labels: muted, smaller
-  - Pair with a [chart-bar] (revenue/EBITDA trend) and/or [chart-donut] (revenue mix) per the
-    SVG CHART LIBRARY (STEP 2d) whenever 2+ comparable data points exist — the chart supplements
-    the table, it never replaces it
-
-• IMAGE PLACEMENT (<!-- IMG:N -->):
-  - Hero/exterior/product shots: full-width poster format (max-height:480px, object-fit:cover, border-radius:12px, box-shadow:0 8px 32px rgba(0,0,0,0.18))
-  - Interior/detail shots: 2-column grid if 2+ images available (gap:1.5rem)
-  - Team/headshot photos: circular crop (border-radius:50%), 120px diameter, centered
-  - Each image: figcaption below in muted italic
-  - Place images where they are CONTEXTUALLY relevant — property photo near Property Details, food shots near Menu/Concept section, etc.
-  - DO NOT cluster all images together — spread them throughout the document
-  - Use <!-- IMG:N --> markers generously if images are available — they make the CIM dramatically more compelling
-  - NEVER use position:absolute (or fixed) to place a content image — that's reserved for the
-    cover-page background pattern above only. Every content image must sit in normal
-    block/flex/grid flow so it can never overlap neighboring text or cards.
-
-• TWO-COLUMN LAYOUT (for details/overview sections):
-  - Left 60% narrative text, right 40% highlight box (accent-tinted bg, border-radius:12px, padding:1.5rem)
-  - Highlight box contains key facts, bullet points, or a single standout metric
-
-• SWOT (if data available):
-  - 2×2 grid, each quadrant full card with colored top border:
-    Strengths → #16a34a (green), Weaknesses → #dc2626 (red)
-    Opportunities → #2563eb (blue), Threats → #d97706 (amber)
-  - Quadrant title: colored, bold, uppercase, small
-  - Items: clean bulleted list
-
-• MANAGEMENT TEAM (if data available):
-  - Card row, each card: white bg, subtle shadow, border-radius:12px, padding:1.5rem
-  - Name: bold 1.1rem, Title: accent color 0.9rem, Bio: muted 0.85rem
-
-• GROWTH & STRATEGY / INVESTMENT THESIS:
-  - Numbered steps or milestone timeline with accent-colored step indicators
-  - Each step: number circle (accent bg, white text), title bold, description muted
-
-━━━━━━━━━━━━━━━━━━━━━━━━
-SECTION FOOTER (every content section, sections I–X)
-━━━━━━━━━━━━━━━━━━━━━━━━
-Every section-N div ends with a slim full-width footer bar (padding 0.75rem 3rem, 1px top
-border in accent or mid color, background matching the section body — light, not dark):
-- Left: business name, small, muted (mid color)
-- Center: the `lock` icon (see ICON SYSTEM) + "STRICTLY PRIVATE & CONFIDENTIAL" in small-caps,
-  muted — omit the icon (keep the text) if the active template's style rules forbid extra
-  ornamentation
-- Right: the section's Roman numeral + title, small, muted (e.g. "III. Financial Information")
-- One footer per section is enough — there is no true pagination in scrollable HTML, so do not
-  repeat it more than once per section-N div
-- TEXT CONTRAST rules (below, in TECHNICAL REQUIREMENTS) still apply here — muted must never mean illegible
-
-━━━━━━━━━━━━━━━━━━━━━━━━
-LAST PAGE — DISCLAIMER
-━━━━━━━━━━━━━━━━━━━━━━━━
-Dark footer page (primary bg):
-- "IMPORTANT NOTICE & DISCLAIMER" in accent, centered
-- Boilerplate confidentiality text: rgba(255,255,255,0.85) — NEVER lower opacity than this, and NEVER a color close in hue/brightness to the background. This text must be plainly, easily readable at a glance, not a subtle/washed-out watermark.
-- Centered accent horizontal rule
-- CRITICAL: you MUST set this color with a selector that directly targets the <p> tags themselves, e.g. `.disclaimer-text p { color: rgba(255,255,255,0.85); }` — do NOT rely on inheriting color from a parent wrapper. Your global `p { color: ... }` rule (used for light-background body text elsewhere) directly targets every `<p>` element and WILL silently override an inherited color on this dark page, making the text invisible. A directly-matched element selector always wins over an inherited value, regardless of the ancestor's specificity.
-
 ═══════════════════════════════════════════════
 TECHNICAL REQUIREMENTS
 ═══════════════════════════════════════════════
@@ -770,20 +588,18 @@ TECHNICAL REQUIREMENTS
 - NEVER use clamp() — use fixed rem/px values for font-size and other properties.
 - NEVER use the inset shorthand — always use explicit top/right/bottom/left properties.
 - NEVER use object-fit — use width:100%;height:100%; with overflow:hidden on the parent instead.
-- Font stack: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif
 - Max content width: 1000px, centered with auto margins
-- The cover page and TOC use fixed-height pages — subsequent sections have generous padding (3rem+)
 - Smooth scroll: html { scroll-behavior: smooth }
 - Financial numbers: font-variant-numeric: tabular-nums
 - Print media: @media print { .no-print { display:none } }
 - Page break rules to prevent awkward splits (add these OUTSIDE @media print): h1,h2,h3,h4 { page-break-after: avoid } table,figure,ul,ol { page-break-inside: avoid } tr { page-break-inside: avoid }
 - @page { size: A4; margin: 10mm; } must be in the <style> block
-- The document should feel HEAVY and SUBSTANTIAL — not lightweight. Use ample whitespace, large typography, rich backgrounds.
 - Custom bullet markers: if a ul/li uses a ::before for a styled bullet/dot, you MUST also set list-style:none on that ul/li — otherwise the browser's default bullet renders alongside it, producing a duplicated "• •" marker.
 - TEXT CONTRAST (applies everywhere, every template): any text on a colored or dark background must maintain at least a 4.5:1 contrast ratio and must be immediately, plainly readable — never a low-opacity "watermark" effect. On dark backgrounds, text opacity must never go below 0.85 (e.g. rgba(255,255,255,0.85), not 0.6 or 0.7). Never set a text color whose hue/brightness is close to its background — if in doubt, use a plain solid light color (near-white or the palette's accent) rather than a translucent one.
 - CSS SPECIFICITY TRAP (a common cause of invisible text — check this every time you write a dark-background block): if you have a global element selector like `p { color: #1a1a1a; }` or `li { color: ... }` for the document's default light-background body text, that rule directly targets every matching tag and OVERRIDES any color merely inherited from a dark-background ancestor (e.g. `.disclaimer-page { color: white; }` does NOT make its `<p>` children white if a global `p { color: #1a1a1a }` rule exists — the direct match always wins over inheritance). Whenever you place text inside a dark/colored block, you MUST set that block's text color with a selector that directly targets the actual text tags (e.g. `.disclaimer-text p { color: ... }`, not just `.disclaimer-text { color: ... }`) — never assume inheritance will apply.
-- SVG ICON SIZING (a common, easy-to-miss bug across every template — see ICON SYSTEM, STEP 2c): every icon `<svg>` tag must carry literal `width`/`height` attributes. A CSS rule for an icon selector that only sets layout properties (`flex-shrink`, `margin`, etc.) and forgets `width`/`height` leaves the browser's native SVG default size of 300×150px, ballooning that row/list/section far wider and taller than intended. Check every icon-targeting CSS rule before finishing.
-- LOGO / COVER LAYERING: the cover top bar holding the <!-- LOGO --> marker must render at a higher z-index than any decorative background shape, corner frame, or bracket on the cover (see PAGE 1 — COVER for the exact z-index/inset rules) — a logo overlapping or crossing through a decorative line is a critical bug. The SAME rule applies to the bottom bar (date/confidentiality row): a decorative corner frame or bracket sized to clear the top corners is not automatically clear of the bottom corners — check the bottom bar's own rendered height against the frame's bottom inset separately.
+- SVG ICON SIZING (a common, easy-to-miss bug — see ICON SYSTEM above): every icon `<svg>` tag must carry literal `width`/`height` attributes. A CSS rule for an icon selector that only sets layout properties (`flex-shrink`, `margin`, etc.) and forgets `width`/`height` leaves the browser's native SVG default size of 300×150px, ballooning that row/list/section far wider and taller than intended. Check every icon-targeting CSS rule before finishing.
+- LOGO / DECORATIVE LAYERING: if the reproduced cover uses layered decorative elements (shapes, frames, brackets) behind the logo/title/confidentiality text, those text/logo elements must render at a HIGHER z-index than the decorative layer — a logo or title rendered behind, touching, or crossing through a decorative line/shape is a critical bug. Whenever you use position:absolute for a decorative layer, explicitly set and check z-index/stacking for every element that must sit above it.
+- ANTI-OVERLAP: every flex/grid child that can hold variable-length text must have `min-width:0` so it can actually shrink instead of overflowing its row; long words must use `overflow-wrap:break-word`. NEVER use position:absolute (or fixed) to place a content image or any other body content — that's reserved for a cover-page decorative/background layer only. Every content image and content element must sit in normal block/flex/grid flow so it can never overlap neighboring text or cards. Place images where they are CONTEXTUALLY relevant (e.g. a property photo near Property Details) and spread them through the document rather than clustering them all together.
 
 Return ONLY the complete HTML document starting with <!DOCTYPE html>. No explanation, no markdown fences."""
 
@@ -1332,12 +1148,14 @@ _FILL_KEYWORDS = (
 def _mentions_color_fill(text: str) -> bool:
     """True if a design-audit description already calls for some kind of
     solid/gradient color fill — used to decide whether the MANDATORY override
-    block needs to explicitly rule OUT the base prompt's own default fill
-    (see _HTML_PROMPT's "SECTION HEADER: Full-width band: gradient from
-    primary to mid" / "PAGE 1 — COVER" gradient spec). A purely descriptive
-    override ("bordered box, text inside box") never said "no band", so
-    Claude kept the base spec's band AND layered the override's box on top —
-    exactly the bug this guards against."""
+    block needs to explicitly rule a fill OUT. Originally added when the
+    prompt still carried its own default "full-width band" section-header
+    spec alongside the override, which Claude followed even when the override
+    described something else (a bordered box never said "no band", so Claude
+    kept both). That default spec is gone now (see _CUSTOM_TEMPLATE_PROMPT's
+    own comment), but the explicit negation stays as a guard against the
+    model's own general trained-in habit of reaching for a colored band/
+    gradient CIM look when the reference doesn't call for one."""
     lowered = text.lower()
     return any(kw in lowered for kw in _FILL_KEYWORDS)
 
@@ -1381,10 +1199,10 @@ def _audit_cover_directive(audit: dict | None) -> str:
         )
         if not _mentions_color_fill(background):
             bits.append(
-                "Do NOT use the default cover spec's flat gradient/solid-color background at "
-                "all — that default does not apply to this template. If no suitable real photo "
-                "is available among the provided listing images, use a plain light or white "
-                "background instead of a gradient — never fabricate the gradient cover as a "
+                "Do NOT default to a flat gradient/solid-color cover background — this "
+                "template's real cover has no such fill at all. If no suitable real photo is "
+                "available among the provided listing images, use a plain light or white "
+                "background instead of a gradient — never fabricate a gradient cover as a "
                 "substitute for the missing photo."
             )
     return " ".join(bits)
@@ -1411,9 +1229,8 @@ def _audit_section_header_directive(audit: dict | None) -> str:
         bits.append(
             "Do NOT use a full-width solid-color or gradient background band behind section "
             "headers — this template's real section headers have no colored fill behind them "
-            "at all. The base prompt's default 'SECTION HEADER: Full-width band, gradient from "
-            "primary to mid' spec does NOT apply to this template; use ONLY the treatment "
-            "described above (e.g. a bordered box/rule directly on the page background)."
+            "at all; use ONLY the treatment described above (e.g. a bordered box/rule directly "
+            "on the page background)."
         )
     return " ".join(bits)
 
@@ -1482,8 +1299,8 @@ def _build_template_directive(template: dict) -> str:
 AUDITED DESIGN SPECIFICATION (from a dedicated design-audit pass over the uploaded file —
 this is far richer than the 4 hex colors and layout notes below and is the SINGLE MOST
 AUTHORITATIVE source for the uploaded template's actual design; the palette/layout-notes
-below and the fallback spec earlier in this prompt only fill in whatever this doesn't cover.
-The COLOR PALETTE below already uses this audit's own color estimate wherever it gave one):
+below only fill in whatever this doesn't cover. The COLOR PALETTE below already uses this
+audit's own color estimate wherever it gave one):
 {formatted}
 """
 
@@ -1492,20 +1309,14 @@ The COLOR PALETTE below already uses this audit's own color estimate wherever it
 ═══════════════════════════════════════════════
 MANDATORY TEMPLATE OVERRIDE — "{template['name']}"
 ═══════════════════════════════════════════════
-Reminder, now that you've read the full fallback spec above: the user's own uploaded file
-(attached earlier as a real vision/document reference, or inlined as text/markup) is the
-design target — the fallback design you just read above is a floor to fill gaps, not the
-goal. EVERYTHING in this block wins over any conflicting instruction earlier in this
-prompt — including STEP 2's industry fallback palette, the generic font stack in TECHNICAL
-REQUIREMENTS, and the default "PAGE 1 — COVER" / "PAGE 2 — TABLE OF CONTENTS" / "KEY METRICS
-STRIP" / "CONTENT SECTIONS — LAYOUT" / "SECTION HEADER" / "SECTION FOOTER" specs. This is
-not a color-only change: the cover page, section headers, and overall document structure
-must actually resemble the uploaded file's real composition wherever it shows one — not
-just be recolored into the same default shapes. The 4 hex values and layout notes below are
-a deterministic SUMMARY of that same uploaded file; they are necessarily incomplete (a
-palette can't describe "no decorative shapes" or "a two-column cover"), so treat the actual
-attached file/image as authoritative for anything this summary doesn't capture. Ignore any
-brand-color instructions above — use ONLY the values below.
+This is the actual design of the user's uploaded file (attached earlier as a real
+vision/document reference, or inlined as text/markup) — the sole visual design target for
+this document. The cover, section headers, and overall document structure must actually
+resemble this file's real composition, not a generic default shape merely recolored to
+match. The 4 hex values and layout notes below are a deterministic SUMMARY of that same
+uploaded file; they are necessarily incomplete (a palette can't describe "no decorative
+shapes" or "a two-column cover"), so treat the actual attached file/image as authoritative
+for anything this summary doesn't capture.
 {audit_block}
 COLOR PALETTE (use exactly these hex values everywhere primary/accent/light/mid are used):
 - primary: {primary}
@@ -1513,17 +1324,17 @@ COLOR PALETTE (use exactly these hex values everywhere primary/accent/light/mid 
 - light:   {light}
 - mid:     {mid}
 
-FONT STACK (replace the 'Segoe UI' stack from TECHNICAL REQUIREMENTS with these):
+FONT STACK:
 - Headings (h1, h2, h3, section titles, cover business name): {f['heading']}
 - Body text (paragraphs, lists, table cells): {f['body']}
 
 LAYOUT & STYLE DIRECTION (apply throughout the document):
 {layout_notes}
 
-COVER PAGE OVERRIDE (mandatory — do not fall back to the default centered cover spec):
+COVER PAGE (mandatory):
 {cover_override}
 
-SECTION HEADER OVERRIDE (mandatory — apply to every section's header band, not just the cover):
+SECTION HEADER TREATMENT (mandatory — apply to every section, not just the cover):
 {section_header_override}
 
 SECTION HEADING LABELS — rename ONLY the displayed title text, keep the same order,
@@ -1954,7 +1765,7 @@ async def generate_cim_html(
         user_content.extend(_build_template_reference_blocks(file_b64, file_ext, design_ref_intro))
 
     if is_custom:
-        prompt_text = _CUSTOM_TEMPLATE_FIDELITY_PREFIX + _HTML_PROMPT + _build_template_directive(template)
+        prompt_text = _CUSTOM_TEMPLATE_PROMPT + _build_template_directive(template)
     else:
         prompt_text = _MARKER_PROMPT + _build_marker_heading_directive(template)
 

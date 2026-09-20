@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-# Standard section headings (as they appear in _HTML_PROMPT / _EXTRACTION_PROMPT).
+# Standard section headings (as they appear in _CUSTOM_TEMPLATE_PROMPT / _MARKER_PROMPT / _EXTRACTION_PROMPT).
 _STANDARD_HEADINGS = [
     "I. Executive Summary",
     "II. Company Overview",
