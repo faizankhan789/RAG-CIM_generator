@@ -21,7 +21,14 @@ from dotenv import load_dotenv
 
 load_dotenv()  # core.llm reads CIM_MODEL at import time, same as server.py does
 
-from core.llm import _build_template_directive, _format_design_audit, audit_template_design
+from core.llm import (
+    _audit_cover_directive,
+    _audit_layout_directive,
+    _audit_section_header_directive,
+    _build_template_directive,
+    _format_design_audit,
+    audit_template_design,
+)
 from tests.pdf_helpers import make_text_pdf
 from tests.template_helpers import make_text_docx, make_text_html
 
@@ -279,3 +286,125 @@ class TestBuildTemplateDirectiveWithAudit:
         template = {**self._BASE_TEMPLATE, "design_audit": {}}
         directive = _build_template_directive(template)
         assert "AUDITED DESIGN SPECIFICATION" not in directive
+
+
+class TestAuditDrivenCoverAndLayoutDirectives:
+    """Regression coverage for the Kline Paper CIM bug: the deterministic PDF
+    heuristic (core/pdf_style_extractor.py) picks up an incidental vector-fill
+    color and unconditionally describes the cover/section headers as sitting
+    on a solid background band — wrong for a template whose real cover is a
+    full-bleed photo behind a bordered text frame. The vision-based audit
+    correctly saw the photo and the frame; it must now win in the actual
+    MANDATORY override text, not just get mentioned in the advisory summary."""
+
+    _BASE_TEMPLATE = {
+        "name": "Your Uploaded Template",
+        "palette": {"primary": "#000000", "accent": "#354021", "light": "#ffffff", "mid": "#000000"},
+        "fonts": {"heading": "Georgia, serif", "body": "Georgia, serif"},
+        "layout_notes": "Section headers sit on a solid #354021 background band. Bullet lists use '•'.",
+        "cover_override": "Cover content is centered. The title sits on a #354021 background band.",
+        "section_header_override": "Section header band uses #354021 as the background color.",
+        "headings": {},
+    }
+    _PHOTO_COVER_AUDIT = {
+        "cover": {
+            "layout": "centered",
+            "background": "full-bleed photo of blurred green grass/wheat field",
+            "decorative_elements": "rectangular border frame with white/cream stroke around centered text block",
+            "title_treatment": "large bold uppercase sans-serif, centered, white/cream text",
+            "has_image": True,
+        },
+        "section_headers": {
+            "style": "rectangular bordered box with thin stroke in primary color; text inside box",
+            "alignment": "left",
+            "decoration": "thin rectangular frame around each major section heading",
+        },
+        "body_style": {
+            "density": "generous whitespace, content split across left and right columns",
+            "corner_style": "sharp corners throughout",
+            "shadows": "none",
+            "table_style": "simple tabular data, no grid lines",
+            "list_style": "bullet points with simple dashes",
+            "dividers": "none visible",
+        },
+        "distinctive_motifs": "signature rectangular border frames around major headings",
+    }
+
+    def test_audit_cover_directive_never_mentions_a_background_band_for_a_photo_cover(self):
+        text = _audit_cover_directive(self._PHOTO_COVER_AUDIT)
+        assert "photo" in text
+        assert "background or gradient" not in text  # sanity: no accidental literal match
+        # "band" only appears inside the explicit prohibition sentence, never as a positive claim.
+        assert "does not apply to this template" in text
+
+    def test_audit_cover_directive_instructs_a_real_photo_not_a_flat_fill(self):
+        text = _audit_cover_directive(self._PHOTO_COVER_AUDIT)
+        assert "photographic" in text.lower()
+        assert "never substitute a solid-color or gradient" in text
+
+    def test_audit_cover_directive_explicitly_bans_default_gradient_when_audit_gives_none(self):
+        """Regression guard for the O'Sarracino case: has_image=True but the
+        base prompt's own default cover spec still has a gradient fallback —
+        a purely descriptive override never said "no gradient", so Claude
+        kept the default gradient anyway (no real listing photos were
+        available to satisfy the photo instruction). The override must now
+        explicitly rule the default gradient out."""
+        text = _audit_cover_directive(self._PHOTO_COVER_AUDIT)
+        assert "do not use the default cover spec" in text.lower()
+
+    def test_audit_section_header_directive_describes_bordered_box_and_bans_default_band(self):
+        text = _audit_section_header_directive(self._PHOTO_COVER_AUDIT)
+        assert "bordered box" in text
+        assert "do not use a full-width solid-color or gradient background band" in text.lower()
+
+    def test_audit_section_header_directive_leaves_band_alone_when_audit_describes_one(self):
+        """If the real template DOES use a colored band, the prohibition must
+        not fire and wrongly contradict the audit's own description."""
+        banded_audit = {"section_headers": {"style": "full-width colored gradient band", "alignment": "left"}}
+        text = _audit_section_header_directive(banded_audit)
+        assert "full-width colored gradient band" in text
+        assert "do not use" not in text.lower()
+
+    def test_audit_layout_directive_pulls_body_style_and_motifs(self):
+        text = _audit_layout_directive(self._PHOTO_COVER_AUDIT)
+        assert "left and right columns" in text
+        assert "signature rectangular border frames" in text
+
+    def test_directive_functions_return_empty_string_when_no_audit(self):
+        assert _audit_cover_directive(None) == ""
+        assert _audit_section_header_directive(None) == ""
+        assert _audit_layout_directive(None) == ""
+        assert _audit_cover_directive({}) == ""
+
+    def test_build_template_directive_prefers_audit_over_wrong_deterministic_band_text(self):
+        """End-to-end: the MANDATORY COVER PAGE OVERRIDE / SECTION HEADER
+        OVERRIDE / LAYOUT & STYLE DIRECTION blocks must carry the audit's
+        accurate photo/bordered-box description, not the deterministic
+        extractor's incorrect 'solid background band' claim, once a real
+        audit is available."""
+        template = {**self._BASE_TEMPLATE, "design_audit": self._PHOTO_COVER_AUDIT}
+        directive = _build_template_directive(template)
+        assert "full-bleed photo" in directive
+        assert "bordered box" in directive
+        assert "do not use a full-width solid-color or gradient background band" in directive.lower()
+        # The deterministic extractor's specific wrong claims must not leak through.
+        assert "title sits on a #354021 background band" not in directive
+        assert "section header band uses #354021" not in directive.lower()
+
+    def test_build_template_directive_falls_back_to_deterministic_when_no_audit(self):
+        """No audit at all (e.g. audit_template_design failed) — the
+        deterministic text is still better than nothing, so it must still
+        appear rather than leaving the override blocks empty."""
+        directive = _build_template_directive(dict(self._BASE_TEMPLATE))
+        assert "background band" in directive
+
+    def test_build_template_directive_falls_back_per_field_when_audit_partial(self):
+        """An audit that only covers the cover (not section headers or body
+        style) must not wipe out the deterministic section-header/layout text
+        it didn't itself provide — fallback is per-field, matching the
+        existing per-field color fallback contract."""
+        cover_only_audit = {"cover": self._PHOTO_COVER_AUDIT["cover"]}
+        template = {**self._BASE_TEMPLATE, "design_audit": cover_only_audit}
+        directive = _build_template_directive(template)
+        assert "full-bleed photo" in directive          # audit-driven cover
+        assert "background color" in directive           # deterministic section-header fallback preserved

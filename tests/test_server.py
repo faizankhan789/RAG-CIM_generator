@@ -588,3 +588,55 @@ class TestTemplateUpload:
             files={"file": ("legacy.doc", b"not a real ole package", "application/msword")},
         )
         assert response.status_code == 400
+
+
+class TestPreviewSavedTemplate:
+    """/template/saved/{id}/preview — renders the saved template's own
+    uploaded file for the picker's preview modal (previewSavedCustomTemplate
+    in view.php), not a generated CIM."""
+
+    def test_renders_pdf_inline(self, client):
+        import base64
+        fake_template = {"file_b64": base64.b64encode(b"%PDF-1.4 fake").decode(), "file_ext": "pdf"}
+        with patch("server.template_store.get_template", new=AsyncMock(return_value=fake_template)):
+            response = client.get("/template/saved/1/preview")
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "application/pdf"
+        assert response.content == b"%PDF-1.4 fake"
+
+    def test_renders_html_inline(self, client):
+        import base64
+        html = b"<html><body>Hello</body></html>"
+        fake_template = {"file_b64": base64.b64encode(html).decode(), "file_ext": "html"}
+        with patch("server.template_store.get_template", new=AsyncMock(return_value=fake_template)):
+            response = client.get("/template/saved/1/preview")
+        assert response.status_code == 200
+        assert "text/html" in response.headers["content-type"]
+        assert b"Hello" in response.content
+
+    def test_falls_back_to_extracted_text_for_docx(self, client):
+        import base64
+        fake_template = {"file_b64": base64.b64encode(b"whatever").decode(), "file_ext": "docx"}
+        with patch("server.template_store.get_template", new=AsyncMock(return_value=fake_template)), \
+             patch("core.docx_style_extractor.extract_plain_text", return_value="Extracted docx body"):
+            response = client.get("/template/saved/1/preview")
+        assert response.status_code == 200
+        assert "text/html" in response.headers["content-type"]
+        assert b"Extracted docx body" in response.content
+        assert b"Live preview isn" in response.content
+
+    def test_returns_placeholder_when_no_file_attached(self, client):
+        with patch("server.template_store.get_template", new=AsyncMock(return_value={"file_b64": "", "file_ext": "pdf"})):
+            response = client.get("/template/saved/1/preview")
+        assert response.status_code == 200
+        assert b"No preview available" in response.content
+
+    def test_returns_404_when_template_missing(self, client):
+        with patch("server.template_store.get_template", new=AsyncMock(return_value=None)):
+            response = client.get("/template/saved/999/preview")
+        assert response.status_code == 404
+
+    def test_scopes_lookup_by_crm_url_derived_from_callback_url(self, client):
+        with patch("server.template_store.get_template", new=AsyncMock(return_value=None)) as mock_get:
+            client.get("/template/saved/1/preview?callback_url=" + "https://crm.example.com/site/cimCallback")
+        mock_get.assert_awaited_once_with(1, "https://crm.example.com")

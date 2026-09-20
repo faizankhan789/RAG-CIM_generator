@@ -37,7 +37,7 @@ from urllib.parse import urlparse
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse, HTMLResponse
+from fastapi.responses import JSONResponse, StreamingResponse, HTMLResponse, Response
 import uvicorn
 from pydantic import BaseModel
 
@@ -76,6 +76,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.on_event("startup")
+async def _warm_template_store_connection() -> None:
+    """Open template_store's shared DB connection eagerly at boot instead of
+    letting the first real /template/saved(-related) request pay the
+    ~1.5-2s TCP+TLS handshake to the remote managed MySQL. Best-effort — a
+    failure here is logged by warm_connection() itself and never blocks
+    startup; the first real call just falls back to connecting normally."""
+    await asyncio.get_event_loop().run_in_executor(None, template_store.warm_connection)
 
 
 class ListingFile(BaseModel):
@@ -628,6 +638,55 @@ async def get_saved_template(template_id: int, callback_url: str = "", crm_url: 
     if template is None:
         raise HTTPException(status_code=404, detail="Saved template not found")
     return JSONResponse(content={"template": template})
+
+
+@app.get("/template/saved/{template_id}/preview")
+async def preview_saved_template(template_id: int, callback_url: str = "", crm_url: str = ""):
+    """Render the saved template's own uploaded file for the preview iframe
+    (see previewSavedCustomTemplate in view.php) — this is the actual
+    reference file the user uploaded, not a generated CIM. PDF/HTML render
+    natively in an iframe; .docx/.doc/.xml have no browser-native inline
+    renderer, so those fall back to the extracted plain text instead of a
+    blank/broken frame."""
+    resolved = _derive_crm_url(crm_url, callback_url) or "unknown"
+    template = await template_store.get_template(template_id, resolved)
+    if template is None:
+        raise HTTPException(status_code=404, detail="Saved template not found")
+
+    file_b64 = template.get("file_b64") or ""
+    file_ext = (template.get("file_ext") or "").lower()
+    if not file_b64:
+        return HTMLResponse(
+            "<div style='font-family:sans-serif;padding:2rem;color:#6b7280;'>"
+            "No preview available for this template.</div>"
+        )
+
+    raw_bytes = base64.standard_b64decode(file_b64)
+    if file_ext == "pdf":
+        return Response(content=raw_bytes, media_type="application/pdf")
+    if file_ext in ("html", "htm"):
+        return HTMLResponse(content=raw_bytes.decode("utf-8", errors="ignore"))
+
+    # .docx/.doc/.xml: no native inline renderer — show the extracted text
+    # instead of a blank iframe, same graceful-degradation spirit as every
+    # other best-effort path in this file.
+    try:
+        if file_ext in ("docx", "doc"):
+            from core.docx_style_extractor import extract_plain_text
+            text = extract_plain_text(raw_bytes)
+        else:
+            text = raw_bytes.decode("utf-8", errors="ignore")
+    except Exception as exc:
+        log.error("preview_saved_template: text extraction failed: %s", exc)
+        text = "(Could not read this file's content for preview.)"
+
+    import html as _html
+    return HTMLResponse(
+        "<div style='font-family:sans-serif;padding:2rem;white-space:pre-wrap;line-height:1.6;'>"
+        "<p style='color:#6b7280;font-style:italic;margin-bottom:1rem;'>"
+        "Live preview isn't available for this file type — showing its extracted text instead.</p>"
+        f"{_html.escape(text)}</div>"
+    )
 
 
 @app.get("/template-preview/{template_id}")

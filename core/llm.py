@@ -1314,6 +1314,134 @@ def _valid_hex(value: Any) -> str | None:
     return None
 
 
+def _clean_audit_val(val: Any) -> str:
+    """Normalize one design-audit leaf value to a usable string, or '' if the
+    audit LLM marked it not applicable ('none' / 'n/a' / 'not visible') —
+    same filtering _format_design_audit uses, factored out so the directive
+    builders below can reuse it."""
+    s = str(val).strip() if val not in (None, "") else ""
+    return "" if s.lower() in ("none", "n/a", "not visible", "false") else s
+
+
+_FILL_KEYWORDS = (
+    "band", "gradient", "solid color", "solid-color", "colored background",
+    "color fill", "coloured background", "filled banner", "solid fill", "full-bleed color",
+)
+
+
+def _mentions_color_fill(text: str) -> bool:
+    """True if a design-audit description already calls for some kind of
+    solid/gradient color fill — used to decide whether the MANDATORY override
+    block needs to explicitly rule OUT the base prompt's own default fill
+    (see _HTML_PROMPT's "SECTION HEADER: Full-width band: gradient from
+    primary to mid" / "PAGE 1 — COVER" gradient spec). A purely descriptive
+    override ("bordered box, text inside box") never said "no band", so
+    Claude kept the base spec's band AND layered the override's box on top —
+    exactly the bug this guards against."""
+    lowered = text.lower()
+    return any(kw in lowered for kw in _FILL_KEYWORDS)
+
+
+def _audit_cover_directive(audit: dict | None) -> str:
+    """Build the COVER PAGE OVERRIDE text from the vision-based design audit
+    (audit_template_design) instead of the deterministic PDF heuristic in
+    core/pdf_style_extractor.py. The deterministic extractor can only detect
+    "some non-black/white vector fill exists somewhere" and always describes
+    the cover as sitting on a solid color band — wrong for any real template
+    whose cover is a photo, gradient, or a bordered frame over an image
+    (exactly the Kline Paper template that exposed this: the audit correctly
+    saw a full-bleed photo, but the deterministic band heuristic picked up
+    the border-frame stroke and told Claude to render a flat color band
+    instead, and that wrong-but-forcefully-worded MANDATORY instruction won).
+    The audit actually looked at the real pages, so it wins wherever it
+    captured something; the deterministic text is now only a fallback for
+    templates with no audit at all (e.g. audit_template_design failed)."""
+    cover = (audit or {}).get("cover")
+    if not isinstance(cover, dict):
+        return ""
+    bits = []
+    layout = _clean_audit_val(cover.get("layout"))
+    if layout:
+        bits.append(f"Layout: {layout}.")
+    background = _clean_audit_val(cover.get("background"))
+    if background:
+        bits.append(f"Background: {background}.")
+    decorative = _clean_audit_val(cover.get("decorative_elements"))
+    if decorative:
+        bits.append(f"Decorative elements: {decorative}.")
+    title = _clean_audit_val(cover.get("title_treatment"))
+    if title:
+        bits.append(f"Title treatment: {title}.")
+    if cover.get("has_image") is True:
+        bits.append(
+            "The real cover uses an actual photographic image, not a flat color or gradient "
+            "fill — reproduce a genuine photographic cover (a fitting real photo as the cover "
+            "background/element, e.g. from the listing images provided), never substitute a "
+            "solid-color or gradient block for it."
+        )
+        if not _mentions_color_fill(background):
+            bits.append(
+                "Do NOT use the default cover spec's flat gradient/solid-color background at "
+                "all — that default does not apply to this template. If no suitable real photo "
+                "is available among the provided listing images, use a plain light or white "
+                "background instead of a gradient — never fabricate the gradient cover as a "
+                "substitute for the missing photo."
+            )
+    return " ".join(bits)
+
+
+def _audit_section_header_directive(audit: dict | None) -> str:
+    """Section-header equivalent of _audit_cover_directive — see its docstring."""
+    sh = (audit or {}).get("section_headers")
+    if not isinstance(sh, dict):
+        return ""
+    bits = []
+    style = _clean_audit_val(sh.get("style"))
+    if style:
+        bits.append(f"Style: {style}.")
+    alignment = _clean_audit_val(sh.get("alignment"))
+    if alignment:
+        bits.append(f"Alignment: {alignment}.")
+    decoration = _clean_audit_val(sh.get("decoration"))
+    if decoration:
+        bits.append(f"Decoration: {decoration}.")
+    if not bits:
+        return ""
+    if not _mentions_color_fill(" ".join(bits)):
+        bits.append(
+            "Do NOT use a full-width solid-color or gradient background band behind section "
+            "headers — this template's real section headers have no colored fill behind them "
+            "at all. The base prompt's default 'SECTION HEADER: Full-width band, gradient from "
+            "primary to mid' spec does NOT apply to this template; use ONLY the treatment "
+            "described above (e.g. a bordered box/rule directly on the page background)."
+        )
+    return " ".join(bits)
+
+
+def _audit_layout_directive(audit: dict | None) -> str:
+    """Body/layout equivalent of _audit_cover_directive: whitespace density,
+    corners, shadows, table/list style, dividers, plus any distinctive
+    motifs the audit called out — richer and more accurate than the
+    deterministic layout_notes (which only knows a detected bullet glyph and
+    whether some vector fill exists)."""
+    audit = audit or {}
+    bs = audit.get("body_style")
+    bits = []
+    if isinstance(bs, dict):
+        for key, label in (
+            ("density", "Whitespace/density"), ("corner_style", "Corners"),
+            ("shadows", "Shadows"), ("table_style", "Tables"),
+            ("list_style", "Lists"), ("dividers", "Dividers"),
+        ):
+            val = _clean_audit_val(bs.get(key))
+            if val:
+                bits.append(f"{label}: {val}.")
+    motifs = _clean_audit_val(audit.get("distinctive_motifs"))
+    if motifs:
+        bits.append(f"Distinctive motifs to reproduce: {motifs}.")
+    return " ".join(bits)
+
+
 def _build_template_directive(template: dict) -> str:
     """Build a prompt override block for a non-default design template. Empty for 'classic'."""
     if not template.get("palette"):
@@ -1323,10 +1451,14 @@ def _build_template_directive(template: dict) -> str:
     f = template["fonts"]
     headings = template.get("headings") or {}
     heading_lines = "\n".join(f'- "{old}" → "{new}"' for old, new in headings.items())
-    cover_override = template.get("cover_override") or ""
-    section_header_override = template.get("section_header_override") or ""
 
     design_audit = template.get("design_audit")
+    cover_override = _audit_cover_directive(design_audit) or template.get("cover_override") or ""
+    section_header_override = (
+        _audit_section_header_directive(design_audit) or template.get("section_header_override") or ""
+    )
+    layout_notes = _audit_layout_directive(design_audit) or template.get("layout_notes") or ""
+
     audit_block = ""
     # The audit's own color estimate (a vision-based judgment looking at the
     # actual rendered design) is generally more reliable than the deterministic
@@ -1386,7 +1518,7 @@ FONT STACK (replace the 'Segoe UI' stack from TECHNICAL REQUIREMENTS with these)
 - Body text (paragraphs, lists, table cells): {f['body']}
 
 LAYOUT & STYLE DIRECTION (apply throughout the document):
-{template['layout_notes']}
+{layout_notes}
 
 COVER PAGE OVERRIDE (mandatory — do not fall back to the default centered cover spec):
 {cover_override}

@@ -16,6 +16,7 @@ import asyncio
 import json
 import logging
 import os
+import threading
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -75,6 +76,75 @@ def _now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
 
+# One long-lived connection, reused across calls, instead of paying a fresh TCP+TLS
+# handshake to the remote managed MySQL on every single request. Measured at ~1.6s per
+# _connect() call from a normal dev network — this is exactly why the saved-templates
+# picker/badge felt slow: showCimVerticaModeModal's badge fetch and showCimTemplateModal's
+# grid fetch each independently call /template/saved, so a fresh-connection-per-call design
+# compounded into a multi-second wait before either one visibly updated. Guarded by a lock
+# since core/*.py's DB calls all run in a thread-pool executor (asyncio.get_event_loop().
+# run_in_executor) and a pymysql connection/cursor is not safe for concurrent use from
+# multiple threads at once.
+_conn: Optional[pymysql.connections.Connection] = None
+_conn_lock = threading.Lock()
+
+
+# Connection-level failures only — NOT pymysql.err.ProgrammingError (e.g. 1146 table
+# missing), which every write already handles itself as an expected self-provisioning
+# case, not a dead connection.
+_CONNECTION_ERRORS = (pymysql.err.OperationalError, pymysql.err.InterfaceError)
+
+
+def _run_db(fn):
+    """Run fn(conn) against the shared connection, reconnecting and retrying ONCE if the
+    connection turned out to be dead. Deliberately does NOT ping() before every call to
+    check liveness first — ping() is itself a full network round trip, measured at ~0.3s
+    to the real remote DB here, i.e. the same cost as the query it would be "protecting",
+    so pinging before every single call would just double the latency of every call to
+    guard against a failure (an idle connection getting dropped) that's rare in practice.
+    Optimistic-and-retry is cheaper on average: try the shared connection directly, and
+    only pay a reconnect if it actually turns out to be dead.
+
+    Any OTHER exception (including a ProgrammingError the caller doesn't itself recognize
+    as the table-missing case) drops the shared connection before re-raising, so a call
+    that failed mid-operation never leaves a possibly broken/half-transaction connection
+    for the next unrelated caller to inherit."""
+    global _conn
+    with _conn_lock:
+        if _conn is None:
+            _conn = _connect()
+        try:
+            return fn(_conn)
+        except _CONNECTION_ERRORS:
+            try:
+                _conn.close()
+            except Exception:
+                pass
+            _conn = _connect()
+            return fn(_conn)
+        except Exception:
+            try:
+                _conn.close()
+            except Exception:
+                pass
+            _conn = None
+            raise
+
+
+def warm_connection() -> None:
+    """Best-effort: establish the shared connection eagerly (e.g. at server startup, see
+    server.py) so the first real request doesn't pay the ~1.5-2s TCP+TLS handshake cost
+    that a cold _conn would otherwise incur. Never raises — a warm-up failure just means
+    the first real call pays the normal (still self-healing) connect cost instead."""
+    global _conn
+    with _conn_lock:
+        if _conn is None:
+            try:
+                _conn = _connect()
+            except Exception as exc:
+                log.warning("template_store warm_connection failed (non-fatal): %s", exc)
+
+
 def _insert_with_auto_create(create_sql: str, insert_sql: str, params: tuple) -> Optional[int]:
     """INSERT with self-provisioning retry: on MySQL error 1146 ("table
     doesn't exist"), CREATE TABLE IF NOT EXISTS and retry the same INSERT
@@ -87,63 +157,95 @@ def _insert_with_auto_create(create_sql: str, insert_sql: str, params: tuple) ->
     Runs synchronously — callers wrap this in run_in_executor (see
     save_template / log_template_audit below).
     """
-    conn = _connect()
-    try:
-        with conn.cursor() as cur:
-            cur.execute(insert_sql, params)
-            row_id = cur.lastrowid
-    except pymysql.err.ProgrammingError as exc:
-        if exc.args and exc.args[0] == _TABLE_MISSING_ERRNO:
+    def _op(conn: pymysql.connections.Connection) -> Optional[int]:
+        try:
             with conn.cursor() as cur:
-                cur.execute(create_sql)
                 cur.execute(insert_sql, params)
-                row_id = cur.lastrowid
-        else:
+                return cur.lastrowid
+        except pymysql.err.ProgrammingError as exc:
+            if exc.args and exc.args[0] == _TABLE_MISSING_ERRNO:
+                with conn.cursor() as cur:
+                    cur.execute(create_sql)
+                    cur.execute(insert_sql, params)
+                    return cur.lastrowid
             raise
-    conn.close()
-    return row_id
+
+    return _run_db(_op)
 
 
 async def save_template(crm_url: str, username: str, name: str, template: dict[str, Any]) -> Optional[int]:
-    """INSERT a new saved template. Returns the new row id, or None on failure.
+    """UPSERT a saved template keyed on (crm_url, name): if a template with
+    the same name already exists for this CRM, its content is refreshed in
+    place (UPDATE) instead of creating a duplicate row — re-uploading /
+    re-saving the same template no longer piles up copies in the picker
+    grid. Returns the row id (new or refreshed), or None on failure.
 
     Self-provisioning: creates custom_templates on first use rather than
     requiring a manual migration against the shared prod DB — see
     core/db_log.py's cim_generation_log for the sibling table this lives
     next to.
     """
-    def _insert() -> Optional[int]:
+    def _upsert() -> Optional[int]:
+        payload = json.dumps(template)
+
+        def _op(conn: pymysql.connections.Connection) -> Optional[int]:
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT id FROM custom_templates WHERE crm_url=%s AND name=%s",
+                        (crm_url, name),
+                    )
+                    existing = cur.fetchone()
+            except pymysql.err.ProgrammingError as exc:
+                if exc.args and exc.args[0] == _TABLE_MISSING_ERRNO:
+                    with conn.cursor() as cur:
+                        cur.execute(_CREATE_TEMPLATES_TABLE_SQL)
+                    existing = None
+                else:
+                    raise
+
+            if existing:
+                row_id = existing["id"]
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "UPDATE custom_templates SET username=%s, template_data=%s, created_at=%s WHERE id=%s",
+                        (username, payload, _now(), row_id),
+                    )
+            else:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        INSERT INTO custom_templates (crm_url, username, name, template_data, created_at)
+                        VALUES (%s, %s, %s, %s, %s)
+                        """,
+                        (crm_url, username, name, payload, _now()),
+                    )
+                    row_id = cur.lastrowid
+            return row_id
+
         try:
-            payload = json.dumps(template)
-            return _insert_with_auto_create(
-                _CREATE_TEMPLATES_TABLE_SQL,
-                """
-                INSERT INTO custom_templates (crm_url, username, name, template_data, created_at)
-                VALUES (%s, %s, %s, %s, %s)
-                """,
-                (crm_url, username, name, payload, _now()),
-            )
+            return _run_db(_op)
         except Exception as exc:
             log.warning("template_store save failed: %s", exc)
             return None
 
-    return await asyncio.get_event_loop().run_in_executor(None, _insert)
+    return await asyncio.get_event_loop().run_in_executor(None, _upsert)
 
 
 async def list_templates(crm_url: str) -> list[dict[str, Any]]:
     """Lightweight list — id + name only, for the picker grid. Never returns
     template_data (can be several MB per row with the attached file)."""
+    def _op(conn: pymysql.connections.Connection) -> list[dict[str, Any]]:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id, name FROM custom_templates WHERE crm_url=%s ORDER BY created_at DESC",
+                (crm_url,),
+            )
+            return cur.fetchall()
+
     def _query() -> list[dict[str, Any]]:
         try:
-            conn = _connect()
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT id, name FROM custom_templates WHERE crm_url=%s ORDER BY created_at DESC",
-                    (crm_url,),
-                )
-                rows = cur.fetchall()
-            conn.close()
-            return rows
+            return _run_db(_op)
         except Exception as exc:
             log.warning("template_store list failed: %s", exc)
             return []
@@ -154,19 +256,20 @@ async def list_templates(crm_url: str) -> list[dict[str, Any]]:
 async def get_template(template_id: int, crm_url: str) -> Optional[dict[str, Any]]:
     """Fetch the full saved template dict for reuse. Scoped to crm_url so one
     tenant can never pull another tenant's saved template by guessing an id."""
+    def _op(conn: pymysql.connections.Connection) -> Optional[dict[str, Any]]:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT template_data FROM custom_templates WHERE id=%s AND crm_url=%s",
+                (template_id, crm_url),
+            )
+            row = cur.fetchone()
+        if not row:
+            return None
+        return json.loads(row["template_data"])
+
     def _query() -> Optional[dict[str, Any]]:
         try:
-            conn = _connect()
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT template_data FROM custom_templates WHERE id=%s AND crm_url=%s",
-                    (template_id, crm_url),
-                )
-                row = cur.fetchone()
-            conn.close()
-            if not row:
-                return None
-            return json.loads(row["template_data"])
+            return _run_db(_op)
         except Exception as exc:
             log.warning("template_store get failed: %s", exc)
             return None
