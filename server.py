@@ -35,7 +35,7 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 from urllib.parse import urlparse
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse, HTMLResponse
 import uvicorn
@@ -43,7 +43,8 @@ from pydantic import BaseModel
 
 from core.listing_context import build_listing_xml
 from core import db_log
-from core.llm import MODEL, reset_token_counters, get_token_counts
+from core import template_store
+from core.llm import MODEL, audit_template_design, reset_token_counters, get_token_counts
 from core.template_extractor import (
     SUPPORTED_EXTENSIONS as _SUPPORTED_TEMPLATE_EXTENSIONS,
     NoExtractableTextError,
@@ -52,6 +53,18 @@ from core.template_extractor import (
 )
 from core.templates import TEMPLATES
 from graph import cim_graph
+
+
+def _derive_crm_url(explicit_crm_url: str, callback_url: str) -> str:
+    """Prefer an explicit crm_url; otherwise derive scheme://host from the
+    callback URL — same fallback _run_job_pipeline has always used for
+    scoping cim_generation_log rows, reused here for custom_templates rows."""
+    if explicit_crm_url:
+        return explicit_crm_url
+    if callback_url:
+        parsed = urlparse(callback_url)
+        return f"{parsed.scheme}://{parsed.netloc}"
+    return ""
 
 _PREVIEWS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "previews")
 
@@ -82,6 +95,7 @@ class CIMRequest(BaseModel):
     crm_url: str = ""        # CRM instance URL (for multi-tenant tracking)
     template_id: str = "classic"  # Selected design template (see core/templates.py)
     custom_template: dict[str, Any] | None = None  # Extracted from an uploaded template file, see core/template_extractor.py
+    featured_image: dict[str, Any] | None = None  # User-uploaded photo to feature in the CIM: {"b64", "mime", "label"}
 
 
 # ---------------------------------------------------------------------------
@@ -177,6 +191,7 @@ def _log_request_details(req: CIMRequest, listing_name: str, asking_price: str) 
     log.debug("  Listing name  : %s", listing_name or "(none)")
     log.debug("  Asking price  : %s", asking_price or "(none)")
     log.debug("  Logo URL      : %s", req.logo or "(none)")
+    log.debug("  Featured image: %s", "yes" if req.featured_image else "(none)")
 
     if req.listing_data:
         skip = {"Name", "name", "Asking Price", "c_listing_askingprice_c"}
@@ -208,6 +223,7 @@ def _build_initial_state(req: CIMRequest) -> dict:
         "logo_url": req.logo or "",
         "template_id": req.template_id or "classic",
         "custom_template": req.custom_template,
+        "featured_image": req.featured_image,
         "pdf_files": [],
         "spreadsheet_files": [],
         "image_files": [],
@@ -240,11 +256,7 @@ async def _run_job_pipeline(req: CIMRequest, job: CIMJob) -> None:
     log.info("━━━ PIPELINE START  listing_id=%s  name=%r ━━━", job.listing_id, listing_name)
 
     reset_token_counters()
-    # Derive crm_url from callback_url if not explicitly provided
-    crm_url = req.crm_url
-    if not crm_url and req.callback_url:
-        parsed = urlparse(req.callback_url)
-        crm_url = f"{parsed.scheme}://{parsed.netloc}"
+    crm_url = _derive_crm_url(req.crm_url, req.callback_url)
     db_row_id = await db_log.log_start(
         username=req.username or "unknown",
         crm_url=crm_url or "unknown",
@@ -500,9 +512,29 @@ _TEMPLATE_CONTENT_TYPE_EXT = {
 
 
 @app.post("/template/upload")
-async def template_upload(file: UploadFile = File(...)):
+async def template_upload(
+    file: UploadFile = File(...),
+    callback_url: str = Form(""),
+    crm_url: str = Form(""),
+    username: str = Form(""),
+):
     """Extract a CIM template style (colors/fonts/layout) from an uploaded
-    PDF, Word (.docx), HTML, or XML file. No LLM."""
+    PDF, Word (.docx), HTML, or XML file — deterministic, no LLM — then run
+    one dedicated LLM design-audit pass over the same file for a much richer
+    design spec (see core.llm.audit_template_design). The audit runs once
+    here, at upload time, not per-generation: its result is merged into the
+    template dict and round-trips through both the frontend's opaque
+    custom_template pass-through and core/template_store.py's persistence,
+    so a saved/reused template gets full audit fidelity on every future
+    generation for free — no re-auditing, no re-upload.
+
+    callback_url/crm_url/username are optional and only used to attribute
+    the audit's real token cost in template_audit_log (see
+    core/template_store.py's log_template_audit) — same _derive_crm_url
+    fallback as every other cost-tracking call in this file. An older
+    frontend that doesn't send them still works fine; the cost is just
+    logged under crm_url="unknown".
+    """
     filename = file.filename or ""
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
     if ext not in _SUPPORTED_TEMPLATE_EXTENSIONS:
@@ -524,9 +556,78 @@ async def template_upload(file: UploadFile = File(...)):
     # an actual reference (vision document for PDF, plain text otherwise) so
     # Claude can see the real layout, not just the deterministic extraction
     # above. See core/llm.py:generate_cim_html.
-    template["file_b64"] = base64.standard_b64encode(file_bytes).decode("utf-8")
+    file_b64 = base64.standard_b64encode(file_bytes).decode("utf-8")
+    template["file_b64"] = file_b64
     template["file_ext"] = ext
+    # Scoped reset/read around just the audit call below — a request-local
+    # token count, same ContextVar mechanism _run_job_pipeline uses per CIM
+    # generation, just borrowed here for a single audit call instead of a
+    # whole pipeline. Isolated per-asyncio-task, so this never interferes
+    # with a concurrent /generate-cim/stream's own counting.
+    reset_token_counters()
+    try:
+        template["design_audit"] = await audit_template_design(file_b64, ext)
+    except Exception as exc:
+        # Best-effort fidelity upgrade — never fail the upload over it. The
+        # deterministic extraction above still works fine on its own.
+        log.error("template_upload: design audit failed: %s", exc)
+        template["design_audit"] = None
+
+    # Cost-logging is separate from the audit's own success/failure above —
+    # a logging hiccup here must never discard an already-successful audit
+    # result, and get_token_counts() still returns whatever the audit call
+    # actually spent even if it errored out partway through the API call.
+    try:
+        in_tok, out_tok = get_token_counts()
+        if in_tok or out_tok:
+            resolved_crm_url = _derive_crm_url(crm_url, callback_url) or "unknown"
+            await template_store.log_template_audit(
+                resolved_crm_url, username or "unknown", MODEL, in_tok, out_tok,
+            )
+    except Exception as exc:
+        log.error("template_upload: cost logging failed: %s", exc)
+
     return JSONResponse(content={"template": template, "warnings": warnings})
+
+
+class SaveTemplateRequest(BaseModel):
+    name: str
+    template: dict[str, Any]
+    callback_url: str = ""
+    crm_url: str = ""
+    username: str = ""
+
+
+@app.post("/template/save")
+async def save_custom_template(req: SaveTemplateRequest):
+    """Persist an already-extracted template (the exact dict /template/upload
+    returned) so it can be reused from the template picker without
+    re-uploading the file. Fed back into custom_template unchanged on reuse —
+    see core/template_store.py."""
+    crm_url = _derive_crm_url(req.crm_url, req.callback_url) or "unknown"
+    row_id = await template_store.save_template(crm_url, req.username or "unknown", req.name, req.template)
+    if row_id is None:
+        raise HTTPException(status_code=500, detail="Failed to save template")
+    return JSONResponse(content={"id": row_id, "name": req.name})
+
+
+@app.get("/template/saved")
+async def list_saved_templates(callback_url: str = "", crm_url: str = ""):
+    """Lightweight list (id + name only) for the template picker grid."""
+    resolved = _derive_crm_url(crm_url, callback_url) or "unknown"
+    templates = await template_store.list_templates(resolved)
+    return JSONResponse(content={"templates": templates})
+
+
+@app.get("/template/saved/{template_id}")
+async def get_saved_template(template_id: int, callback_url: str = "", crm_url: str = ""):
+    """Fetch one saved template's full dict — same shape as /template/upload's
+    response — for reuse as custom_template in a generation request."""
+    resolved = _derive_crm_url(crm_url, callback_url) or "unknown"
+    template = await template_store.get_template(template_id, resolved)
+    if template is None:
+        raise HTTPException(status_code=404, detail="Saved template not found")
+    return JSONResponse(content={"template": template})
 
 
 @app.get("/template-preview/{template_id}")

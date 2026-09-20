@@ -6,6 +6,7 @@ import asyncio
 import base64
 import contextvars
 import io
+import json
 import logging
 import os
 import re
@@ -251,6 +252,58 @@ async def extract_from_content(
 
 
 # ── Final HTML generation ─────────────────────────────────────────────────────
+
+# Prepended ONLY for the custom-template (uploaded PDF/Word/HTML/XML) path, before
+# _HTML_PROMPT's own text. Placed first for primacy (the first thing read in a long
+# prompt gets disproportionate weight) — _build_template_directive() below restates
+# the same priority at the very end of the prompt for recency, sandwiching _HTML_PROMPT's
+# generic spec between two statements that it is a fallback, not the target design.
+#
+# Why this exists: _HTML_PROMPT below is an extremely detailed, opinionated default CIM
+# design (exact rem sizes, a specific cover badge-pill/gradient/decorative-shape treatment,
+# a specific TOC style, a specific key-metrics-strip design, per-section-type layout rules,
+# a specific footer). That level of detail reliably wins the model's attention over a much
+# shorter "match the uploaded template" instruction appended after it — the net effect,
+# without this prefix, is a CIM that uses the uploaded template's COLORS but is still
+# structurally the same generic default design. This block exists to stop that: it names
+# every specific default-design section below and tells the model up front that all of them
+# are fallback-only for whatever the uploaded reference doesn't show, never the target.
+_CUSTOM_TEMPLATE_FIDELITY_PREFIX = """\
+═══════════════════════════════════════════════
+PRIORITY ORDER FOR THIS JOB — READ BEFORE STEP 1
+═══════════════════════════════════════════════
+The user uploaded their own design template (attached below as a real file/image, plus a
+deterministic color/font extraction). Your job is to make the generated CIM's VISUAL DESIGN
+match that uploaded template as closely as you can — not a generic premium-bank look, not
+this prompt's own default design. This applies to structure and composition, not just color:
+cover composition and content order, typographic scale and weight, spacing/density, how
+section headers are treated, whether there's a decorative element at all, image treatment,
+table styling, list/bullet style — everything visual.
+
+Everything below this line — "PAGE 1 — COVER", "PAGE 2 — TABLE OF CONTENTS", "KEY METRICS
+STRIP", "CONTENT SECTIONS — LAYOUT", "SECTION FOOTER", "LAST PAGE — DISCLAIMER", and STEP 2's
+industry color palettes and icon/chart specifics — is a FALLBACK DESIGN, not a mandate. Use
+it only to fill in what the uploaded template genuinely doesn't show or that doesn't apply
+(e.g. it has no financial-table example, or no SWOT layout, or the content needs a component
+type the template happens not to demonstrate). Wherever the uploaded template shows its own
+clear approach to something below — a different cover layout, no badge pill, no decorative
+gradient shapes, a plainer or busier section header, a different typographic hierarchy, a
+sidebar, whatever it actually does — follow the uploaded template, not the fallback text.
+Concretely: if the uploaded template's cover is a simple centered title on a white page with
+no gradient background, do NOT still give it a dark gradient cover with a badge pill just
+because that's what the fallback spec below describes — reproduce the uploaded template's
+actual simpler design instead.
+
+This priority rule is about visual design only. Every content/data rule elsewhere in this
+prompt (the section structure, the 10-section content backbone, and especially the CRITICAL
+DATA RULES and FINANCIAL NUMBER RULES about never inventing, rounding, or fabricating a
+number) is absolute regardless of the template — visual fidelity to the upload never means
+copying its numbers, names, or wording. The technical correctness rules (self-contained CSS,
+no external resources, print/page-break rules, text-contrast minimums, SVG icon sizing) also
+still apply no matter what the uploaded template looks like — those prevent the output from
+being broken, not from looking like the fallback design.
+
+"""
 
 _HTML_PROMPT = """\
 You are a world-class investment banking designer creating a stunning, print-ready Confidential Information Memorandum (CIM).
@@ -662,6 +715,9 @@ Use the most appropriate layout for the content type:
   - Place images where they are CONTEXTUALLY relevant — property photo near Property Details, food shots near Menu/Concept section, etc.
   - DO NOT cluster all images together — spread them throughout the document
   - Use <!-- IMG:N --> markers generously if images are available — they make the CIM dramatically more compelling
+  - NEVER use position:absolute (or fixed) to place a content image — that's reserved for the
+    cover-page background pattern above only. Every content image must sit in normal
+    block/flex/grid flow so it can never overlap neighboring text or cards.
 
 • TWO-COLUMN LAYOUT (for details/overview sections):
   - Left 60% narrative text, right 40% highlight box (accent-tinted bg, border-radius:12px, padding:1.5rem)
@@ -1181,6 +1237,83 @@ def _select_template(template_id: str, custom_template: dict | None) -> dict:
     return custom_template if custom_template else get_template(template_id)
 
 
+def _format_design_audit(audit: dict) -> str:
+    """Render the structured dict from audit_template_design() into readable
+    prose for the prompt. Defensive against partial/malformed shapes — this
+    is LLM output stored as opaque JSON (core/template_store.py), so a field
+    or sub-key can be missing or a saved template can predate this feature
+    entirely; a missing piece is simply omitted, never a crash."""
+    def _get(section: str, key: str) -> str:
+        val = (audit.get(section) or {}).get(key) if isinstance(audit.get(section), dict) else None
+        return str(val) if val else ""
+
+    def _get_bool(section: str, key: str) -> str:
+        # Separate from _get(): a real `False` is meaningful data, not a
+        # missing value — _get()'s "falsy means unset" rule would silently
+        # swallow it, which is correct for free-text fields but wrong here.
+        sect = audit.get(section)
+        val = sect.get(key) if isinstance(sect, dict) else None
+        return {"True": "yes", "False": "no"}.get(str(val), "") if isinstance(val, bool) else ""
+
+    lines = []
+    has_image = _get_bool("cover", "has_image")
+    cover_bits = [
+        _get("cover", "layout"), _get("cover", "background"),
+        _get("cover", "decorative_elements"), _get("cover", "title_treatment"), has_image,
+    ]
+    if any(cover_bits):
+        lines.append(
+            f"- Cover: layout={_get('cover', 'layout') or 'n/a'}; "
+            f"background={_get('cover', 'background') or 'n/a'}; "
+            f"decorative elements={_get('cover', 'decorative_elements') or 'n/a'}; "
+            f"title treatment={_get('cover', 'title_treatment') or 'n/a'}; "
+            f"has its own image={has_image or 'n/a'}"
+        )
+    if any([_get("typography", "heading_font_style"), _get("typography", "body_font_style")]):
+        lines.append(
+            f"- Typography: headings={_get('typography', 'heading_font_style') or 'n/a'}; "
+            f"body={_get('typography', 'body_font_style') or 'n/a'}; "
+            f"case={_get('typography', 'heading_case') or 'n/a'}; "
+            f"letter-spacing={_get('typography', 'letter_spacing') or 'n/a'}"
+        )
+    if _get("colors", "notes"):
+        lines.append(f"- Color usage notes: {_get('colors', 'notes')}")
+    if any([_get("section_headers", "style"), _get("section_headers", "decoration")]):
+        lines.append(
+            f"- Section headers: style={_get('section_headers', 'style') or 'n/a'}; "
+            f"alignment={_get('section_headers', 'alignment') or 'n/a'}; "
+            f"decoration={_get('section_headers', 'decoration') or 'n/a'}"
+        )
+    body_bits = [_get("body_style", k) for k in
+                 ("density", "corner_style", "shadows", "table_style", "list_style", "dividers")]
+    if any(body_bits):
+        lines.append(
+            f"- Body style: density={_get('body_style', 'density') or 'n/a'}; "
+            f"corners={_get('body_style', 'corner_style') or 'n/a'}; "
+            f"shadows={_get('body_style', 'shadows') or 'n/a'}; "
+            f"tables={_get('body_style', 'table_style') or 'n/a'}; "
+            f"lists={_get('body_style', 'list_style') or 'n/a'}; "
+            f"dividers={_get('body_style', 'dividers') or 'n/a'}"
+        )
+    motifs = audit.get("distinctive_motifs")
+    if motifs and str(motifs).strip().lower() not in ("none", "n/a", ""):
+        lines.append(f"- Distinctive motifs: {motifs}")
+    return "\n".join(lines)
+
+
+_HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+
+def _valid_hex(value: Any) -> str | None:
+    """Return value if it's a genuine "#rrggbb" hex string, else None. Guards
+    against the audit LLM writing "not visible" or "n/a" into a color field
+    despite the schema instructions — colors are almost always visible, but
+    never trust free-form LLM output to already be a valid hex code."""
+    if isinstance(value, str) and _HEX_COLOR_RE.match(value.strip()):
+        return value.strip()
+    return None
+
+
 def _build_template_directive(template: dict) -> str:
     """Build a prompt override block for a non-default design template. Empty for 'classic'."""
     if not template.get("palette"):
@@ -1193,23 +1326,60 @@ def _build_template_directive(template: dict) -> str:
     cover_override = template.get("cover_override") or ""
     section_header_override = template.get("section_header_override") or ""
 
+    design_audit = template.get("design_audit")
+    audit_block = ""
+    # The audit's own color estimate (a vision-based judgment looking at the
+    # actual rendered design) is generally more reliable than the deterministic
+    # extractor's heuristic (most-common heading/body run color, or most-common
+    # vector-fill color) — which can miss gradients entirely or pick up an
+    # incidental color. Override the deterministic palette field-by-field
+    # wherever the audit supplied a genuine hex value; fall back to the
+    # deterministic value per-field otherwise, so a partial audit (e.g. only
+    # 2 of 4 colors given) never loses the other 2 known-good values.
+    audit_colors = (design_audit or {}).get("colors") if isinstance(design_audit, dict) else None
+    audit_colors = audit_colors if isinstance(audit_colors, dict) else {}
+    primary = _valid_hex(audit_colors.get("primary_hex")) or p["primary"]
+    accent = _valid_hex(audit_colors.get("accent_hex")) or p["accent"]
+    light = _valid_hex(audit_colors.get("background_hex")) or p["light"]
+    mid = _valid_hex(audit_colors.get("mid_hex")) or p["mid"]
+
+    if isinstance(design_audit, dict):
+        formatted = _format_design_audit(design_audit)
+        if formatted:
+            audit_block = f"""
+AUDITED DESIGN SPECIFICATION (from a dedicated design-audit pass over the uploaded file —
+this is far richer than the 4 hex colors and layout notes below and is the SINGLE MOST
+AUTHORITATIVE source for the uploaded template's actual design; the palette/layout-notes
+below and the fallback spec earlier in this prompt only fill in whatever this doesn't cover.
+The COLOR PALETTE below already uses this audit's own color estimate wherever it gave one):
+{formatted}
+"""
+
     return f"""\
 
 ═══════════════════════════════════════════════
 MANDATORY TEMPLATE OVERRIDE — "{template['name']}"
 ═══════════════════════════════════════════════
-The user explicitly selected this design template. EVERYTHING in this block wins over
-any conflicting instruction earlier in this prompt — including STEP 2's industry
-fallback palette, the generic font stack in TECHNICAL REQUIREMENTS, and the default
-"PAGE 1 — COVER" / "SECTION HEADER" specs. This is not a color-only change: the cover
-page and section headers must be STRUCTURALLY different from the default layout, not
-just recolored. Ignore any brand-color instructions above — use ONLY the values below.
-
+Reminder, now that you've read the full fallback spec above: the user's own uploaded file
+(attached earlier as a real vision/document reference, or inlined as text/markup) is the
+design target — the fallback design you just read above is a floor to fill gaps, not the
+goal. EVERYTHING in this block wins over any conflicting instruction earlier in this
+prompt — including STEP 2's industry fallback palette, the generic font stack in TECHNICAL
+REQUIREMENTS, and the default "PAGE 1 — COVER" / "PAGE 2 — TABLE OF CONTENTS" / "KEY METRICS
+STRIP" / "CONTENT SECTIONS — LAYOUT" / "SECTION HEADER" / "SECTION FOOTER" specs. This is
+not a color-only change: the cover page, section headers, and overall document structure
+must actually resemble the uploaded file's real composition wherever it shows one — not
+just be recolored into the same default shapes. The 4 hex values and layout notes below are
+a deterministic SUMMARY of that same uploaded file; they are necessarily incomplete (a
+palette can't describe "no decorative shapes" or "a two-column cover"), so treat the actual
+attached file/image as authoritative for anything this summary doesn't capture. Ignore any
+brand-color instructions above — use ONLY the values below.
+{audit_block}
 COLOR PALETTE (use exactly these hex values everywhere primary/accent/light/mid are used):
-- primary: {p['primary']}
-- accent:  {p['accent']}
-- light:   {p['light']}
-- mid:     {p['mid']}
+- primary: {primary}
+- accent:  {accent}
+- light:   {light}
+- mid:     {mid}
 
 FONT STACK (replace the 'Segoe UI' stack from TECHNICAL REQUIREMENTS with these):
 - Headings (h1, h2, h3, section titles, cover business name): {f['heading']}
@@ -1263,12 +1433,176 @@ def _build_image_tag(img: dict, index: int) -> str:
     )
 
 
+def _build_template_reference_blocks(file_b64: str, file_ext: str, intro_text: str) -> list[dict]:
+    """Build the content blocks that let Claude actually see/read an uploaded
+    template file. Shared by generate_cim_html's design-reference attachment
+    and audit_template_design's dedicated design-audit call so the two never
+    drift out of sync on how each format is attached.
+
+    PDF -> real document (vision) block, Claude sees the actual pages.
+    .docx -> flattened text + any embedded images as real vision blocks
+    (extract_reference_images) — .docx has no document-vision path.
+    HTML/XML -> raw markup as text (already carries the real CSS values).
+    """
+    blocks: list[dict] = []
+    if file_ext == "pdf":
+        blocks.append({"type": "text", "text": intro_text})
+        blocks.append({
+            "type": "document",
+            "source": {"type": "base64", "media_type": "application/pdf", "data": file_b64},
+        })
+        return blocks
+
+    raw_bytes = base64.standard_b64decode(file_b64)
+    ref_images: list[dict] = []
+    if file_ext in ("docx", "doc"):
+        from core.docx_style_extractor import extract_plain_text, extract_reference_images
+        raw_text = extract_plain_text(raw_bytes)
+        try:
+            ref_images = extract_reference_images(raw_bytes)
+        except Exception as exc:
+            log.error("Template reference: failed to extract images from .docx: %s", exc)
+    else:  # html, htm, xml
+        raw_text = raw_bytes.decode("utf-8", errors="ignore")
+
+    blocks.append({"type": "text", "text": intro_text + f"\n\n```\n{raw_text}\n```"})
+    for ref_img in ref_images:
+        blocks.append({
+            "type": "image",
+            "source": {"type": "base64", "media_type": ref_img["mime"], "data": ref_img["b64"]},
+        })
+        blocks.append({
+            "type": "text",
+            "text": (
+                "(Above is an image embedded in the uploaded Word template — design "
+                "reference only: mimic its visual style if relevant, never copy any "
+                "text/logo/figures from it into the output.)"
+            ),
+        })
+    return blocks
+
+
+_TEMPLATE_AUDIT_PROMPT = """\
+Describe ONLY the visual design of the attached template file — never its text content,
+never its numbers, never any company/business name it contains. Look at it the way a
+graphic designer would: composition, color, type, spacing, decoration.
+
+Return ONLY a single JSON object, no markdown fences, no explanation, matching exactly
+this schema (use "none" or "not visible" for any field that genuinely doesn't apply —
+never invent a detail you can't actually see):
+
+{
+  "cover": {
+    "layout": "e.g. centered / left-aligned / split-image / full-bleed-image / grid",
+    "background": "e.g. solid navy / diagonal gradient navy-to-gold / full-bleed photo / plain white",
+    "decorative_elements": "e.g. thin gold corner frame / large translucent circles / none",
+    "title_treatment": "size/weight/case as observed, e.g. large bold uppercase serif, centered",
+    "has_image": true or false
+  },
+  "typography": {
+    "heading_font_style": "e.g. bold serif with wide letter-spacing / condensed sans-serif",
+    "body_font_style": "e.g. plain sans-serif, comfortable line-height",
+    "heading_case": "e.g. uppercase / title case / sentence case",
+    "letter_spacing": "e.g. tight / normal / wide-tracking"
+  },
+  "colors": {
+    "primary_hex": "#rrggbb best estimate of the dominant dark/brand color",
+    "accent_hex": "#rrggbb best estimate of the accent/highlight color",
+    "background_hex": "#rrggbb best estimate of the page background",
+    "mid_hex": "#rrggbb best estimate of a secondary/muted tone for less prominent text or chart elements",
+    "notes": "anything about color usage a hex code alone can't capture, e.g. 'gold used only for rule lines, never as a fill'"
+  },
+  "section_headers": {
+    "style": "e.g. full-width colored band / plain with a thin rule beneath / no visual separation at all",
+    "alignment": "left or center",
+    "decoration": "e.g. small numbered chip before the title / none"
+  },
+  "body_style": {
+    "density": "e.g. generous whitespace / compact and dense",
+    "corner_style": "sharp corners / rounded corners",
+    "shadows": "flat, no shadows / subtle drop shadows / heavy shadows",
+    "table_style": "e.g. no visible table borders, alternating row tint / bordered grid",
+    "list_style": "e.g. simple dash bullets / numbered / no lists present",
+    "dividers": "e.g. thin horizontal rules between sections / none"
+  },
+  "distinctive_motifs": "free text — anything signature/unusual about this specific template that the fields above don't capture, or 'none' if the design is plain"
+}
+"""
+
+
+async def audit_template_design(file_b64: str, file_ext: str) -> dict | None:
+    """Dedicated design-audit call, run ONCE at template-upload time (see
+    server.py's /template/upload) — not per-generation. Its sole job is to
+    study the uploaded file and describe its actual visual design in
+    exhaustive, structured detail, producing a far richer design source than
+    the deterministic palette/font extraction in core/*_style_extractor.py
+    (which literally cannot express things like "no decorative shapes" or
+    "split-image cover layout" — it only sees a handful of colors/fonts).
+
+    The result gets merged into the saved custom_template dict as
+    "design_audit" (see server.py) and, from there, round-trips transparently
+    through core/template_store.py's JSON persistence and the frontend's
+    opaque custom_template pass-through — audited once, reused free on every
+    future generation from that template, including saved-template reuse.
+
+    Returns None on any failure (bad JSON, API error, unreadable file) —
+    generation still works via the existing deterministic extraction; this
+    is a fidelity upgrade, never a hard dependency, so a failure here must
+    never fail the upload itself.
+    """
+    if not file_b64:
+        return None
+
+    intro = (
+        "## Template File to Audit\n"
+        "This file is a design template uploaded by a user. You are auditing its VISUAL "
+        "DESIGN ONLY — see the prompt that follows for the exact output format."
+    )
+    try:
+        content_blocks = _build_template_reference_blocks(file_b64, file_ext, intro)
+    except Exception as exc:
+        log.error("Template audit: failed to build reference blocks (ext=%s): %s", file_ext, exc)
+        return None
+    content_blocks.append({"type": "text", "text": _TEMPLATE_AUDIT_PROMPT})
+
+    try:
+        client = get_client()
+        response = await client.messages.create(
+            model=MODEL,
+            max_tokens=2048,
+            messages=[{"role": "user", "content": content_blocks}],
+        )
+        _add_tokens(response.usage.input_tokens, response.usage.output_tokens)
+        raw = response.content[0].text.strip()
+    except Exception as exc:
+        log.error("Template audit: LLM call failed: %s", exc)
+        return None
+
+    if raw.startswith("```"):
+        lines = raw.split("\n")
+        raw = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
+    if raw.endswith("```"):
+        raw = raw.rsplit("```", 1)[0].strip()
+
+    try:
+        audit = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        log.error("Template audit: response was not valid JSON: %s", exc)
+        return None
+
+    if not isinstance(audit, dict):
+        log.error("Template audit: response JSON was not an object")
+        return None
+    return audit
+
+
 async def generate_cim_html(
     all_findings: list[str],
     listing_xml: str,
     listing_name: str,
     asking_price: str,
     all_images: list[dict] | None = None,
+    featured_image: dict | None = None,
     logo_b64: str = "",
     logo_mime: str = "",
     brand_primary: str = "",
@@ -1353,6 +1687,57 @@ async def generate_cim_html(
                 "text": f"(Above image is Image {seq_i}: \"{label}\". Use marker <!-- IMG:{seq_i} --> to embed it.)",
             })
 
+    # The user-uploaded "featured" image (server.py's /generate-cim request field
+    # featured_image) is different from the pool above: the user explicitly chose
+    # it to appear in this CIM, so it is NOT skippable — Claude picks WHERE it
+    # fits best, never WHETHER to use it. It gets the next sequential IMG index
+    # after the general pool and rides the exact same <!-- IMG:N --> substitution
+    # mechanism below, which is what keeps its placement a normal-flow, non-
+    # overlapping <figure> rather than arbitrary markup. If Claude still omits
+    # the marker, the fallback further below force-places it — this field is
+    # enforced in code, not requested by prompt alone.
+    featured_index: int | None = None
+    featured_img_data: dict | None = None
+    if featured_image:
+        f_b64 = featured_image.get("b64", "")
+        f_mime = featured_image.get("mime", "image/jpeg")
+        f_label = featured_image.get("label") or "Featured photo"
+        if f_b64 and _is_valid_image(f_b64, f_mime, f_label):
+            featured_index = len(valid_images) + 1
+            featured_img_data = {"b64": f_b64, "mime": f_mime, "label": f_label}
+            user_content.append({
+                "type": "text",
+                "text": (
+                    f"## Featured Image — MANDATORY (Image {featured_index})\n"
+                    "The user explicitly uploaded this photo to be featured in this CIM. "
+                    "Unlike the images above, this one must NOT be skipped and must NOT be "
+                    "judged for relevance — place it. "
+                    "Choose the ONE content section it fits best based on what it actually "
+                    "shows (exterior/storefront -> Business/Property Overview; product or "
+                    "food shot -> Products & Services; team photo -> Management & Team; "
+                    "equipment/interior -> Operations). "
+                    f"Place the exact marker <!-- IMG:{featured_index} --> exactly once, using "
+                    "the [image-hero] pattern (full-width, inside that section's normal content "
+                    "flow) so it can never overlap anything else. "
+                    "Do NOT place it on the cover, do NOT wrap it in position:absolute, and do "
+                    "NOT invent a caption beyond a short factual label of what it depicts."
+                ),
+            })
+            user_content.append({
+                "type": "image",
+                "source": {"type": "base64", "media_type": f_mime, "data": f_b64},
+            })
+            user_content.append({
+                "type": "text",
+                "text": (
+                    f"(Above is the mandatory featured image — Image {featured_index}. "
+                    f"Use marker <!-- IMG:{featured_index} --> exactly once.)"
+                ),
+            })
+            valid_images.append((0, featured_img_data))
+        else:
+            log.error("HTML gen: dropping invalid/corrupt featured_image")
+
     # For the 5 built-in templates, palette (including any brand-color override) and
     # the logo placement are entirely chrome's job now (core/chrome/<id>.py +
     # core/cim_assembler.py) — Claude never sees brand colors or the logo image in
@@ -1417,38 +1802,27 @@ async def generate_cim_html(
     file_ext = template.get("file_ext", "")
     if is_custom and file_b64:
         design_ref_intro = (
-            "## Uploaded Template File (design reference ONLY)\n"
+            "## Uploaded Template File — THE design target (reference ONLY, never content)\n"
             "The file the user uploaded as their design template is attached/quoted below. "
-            "Study its actual layout — cover composition, section header bands, table/list "
-            "structures, spacing, decorative shapes, image placement — and reproduce that "
-            "visual design as closely as possible. The palette/fonts/layout notes above are "
-            "a deterministic summary of this same file; treat the attachment as the "
-            "authoritative reference wherever that summary underspecifies something.\n"
+            "This is the primary source of truth for what the generated CIM should look "
+            "like — study its actual layout: cover composition, whether it's centered or "
+            "not, whether it has any decorative shapes at all, section header treatment, "
+            "table/list structures, spacing/density, typographic scale, image placement — "
+            "and reproduce THAT, not this prompt's own default design (see the PRIORITY "
+            "ORDER note at the top of this prompt — the 'PAGE 1 — COVER' etc. specs below "
+            "are fallback only). The palette/fonts/layout notes elsewhere in this prompt are "
+            "a deterministic summary of this same file; treat this attachment as the "
+            "authoritative reference wherever that summary underspecifies something — a "
+            "handful of hex codes and font names cannot capture a layout.\n"
             "CRITICAL: this file is a DESIGN REFERENCE ONLY. Never copy any text, numbers, "
             "company name, or figures from it into your output — every word and number you "
             "write must come from the listing data / findings / images provided above. Mimic "
             "the LOOK of the uploaded template, never its CONTENT."
         )
-        if file_ext == "pdf":
-            user_content.append({"type": "text", "text": design_ref_intro})
-            user_content.append({
-                "type": "document",
-                "source": {"type": "base64", "media_type": "application/pdf", "data": file_b64},
-            })
-        else:
-            raw_bytes = base64.standard_b64decode(file_b64)
-            if file_ext in ("docx", "doc"):
-                from core.docx_style_extractor import extract_plain_text
-                raw_text = extract_plain_text(raw_bytes)
-            else:  # html, htm, xml
-                raw_text = raw_bytes.decode("utf-8", errors="ignore")
-            user_content.append({
-                "type": "text",
-                "text": design_ref_intro + f"\n\n```\n{raw_text}\n```",
-            })
+        user_content.extend(_build_template_reference_blocks(file_b64, file_ext, design_ref_intro))
 
     if is_custom:
-        prompt_text = _HTML_PROMPT + _build_template_directive(template)
+        prompt_text = _CUSTOM_TEMPLATE_FIDELITY_PREFIX + _HTML_PROMPT + _build_template_directive(template)
     else:
         prompt_text = _MARKER_PROMPT + _build_marker_heading_directive(template)
 
@@ -1525,11 +1899,44 @@ async def generate_cim_html(
         # and handed to the chrome renderer, so there's no marker to substitute here
         # and no fallback-placement bug class to have.
 
+        # Snapshot before substitution — once the loop below replaces a marker with
+        # its <figure>, the marker string is gone from html either way, so "was it
+        # actually there" can only be checked now.
+        featured_marker = f"<!-- IMG:{featured_index} -->" if featured_index else None
+        featured_used_by_llm = bool(featured_marker and featured_marker in html)
+
         # Replace <!-- IMG:N --> markers with actual base64 img tags (sequential over valid images)
         for seq_i, (_orig_i, img) in enumerate(valid_images, start=1):
             marker = f"<!-- IMG:{seq_i} -->"
             if marker in html:
                 html = html.replace(marker, _build_image_tag(img, seq_i))
+
+        if featured_index is not None and not featured_used_by_llm:
+            # Enforcement, not just a prompt request: Claude ignored the mandatory
+            # marker, so force-place the image ourselves. Both branches insert it as
+            # a normal-flow block (never position:absolute), which is what makes the
+            # "no overlap" guarantee hold even when the LLM didn't cooperate.
+            log.error(
+                "HTML gen: Claude omitted the mandatory featured-image marker "
+                "<!-- IMG:%d --> — using fallback placement", featured_index,
+            )
+            fallback_tag = _build_image_tag(featured_img_data, featured_index)
+            if is_custom:
+                fallback_block = f'<div style="max-width:900px;margin:2rem auto;">{fallback_tag}</div>'
+                html = re.sub(r'<body\b[^>]*>', lambda m: m.group(0) + fallback_block, html, count=1)
+            else:
+                # Marker path: html here is still raw SECTION-marker text (chrome
+                # assembly happens later in core/cim_assembler.py) — drop the image
+                # into the first section's normal content flow, right after its
+                # opening marker, rather than trying to inject into a <body> that
+                # doesn't exist yet at this stage.
+                first_section_open = re.search(r'<!--\s*SECTION\b[^>]*-->', html)
+                if first_section_open:
+                    insert_at = first_section_open.end()
+                    html = html[:insert_at] + fallback_tag + html[insert_at:]
+                # else: no SECTION markers at all — already a contract violation that
+                # core.cim_assembler.assemble() falls back on separately; nothing
+                # more can be safely done with unstructured text here.
 
         return html
     except Exception as exc:

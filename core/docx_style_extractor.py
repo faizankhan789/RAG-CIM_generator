@@ -17,6 +17,7 @@ error rather than a 500.
 
 from __future__ import annotations
 
+import base64
 import io
 from collections import Counter
 
@@ -95,6 +96,54 @@ def extract_plain_text(docx_bytes: bytes) -> str:
         for row in table.rows:
             lines.append("\t".join(cell.text.strip() for cell in row.cells))
     return "\n".join(lines)
+
+
+_MAX_REFERENCE_IMAGES = 4
+_ACCEPTED_IMAGE_CONTENT_TYPES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
+
+
+def extract_reference_images(docx_bytes: bytes) -> list[dict]:
+    """Pull embedded images out of a .docx package (logos, photos, decorative
+    graphics) so Claude can actually SEE the template's visual design instead
+    of relying solely on the flattened text from extract_plain_text() above —
+    plain text carries zero information about a Word template's imagery,
+    which is otherwise a total blind spot for this format (PDF gets a real
+    vision/document attachment; HTML/XML keep their real markup; .docx had
+    neither before this).
+
+    Returns up to _MAX_REFERENCE_IMAGES dicts: {"b64": str, "mime": str},
+    largest-by-byte-size first (a reasonable proxy for "most likely to be a
+    meaningful design element" over small bullet/spacer glyphs). Best-effort —
+    truly never raises: an unreadable image part is skipped, and even a
+    docx_bytes that isn't a valid .docx at all degrades to an empty list
+    rather than propagating (this is a design-reference nice-to-have, never
+    worth failing the whole template upload over).
+    """
+    from docx.opc.constants import RELATIONSHIP_TYPE
+
+    found: list[tuple[int, dict]] = []
+    try:
+        doc = Document(io.BytesIO(docx_bytes))
+        for rel in doc.part.rels.values():
+            if rel.is_external or rel.reltype != RELATIONSHIP_TYPE.IMAGE:
+                continue
+            try:
+                part = rel.target_part
+                content_type = (part.content_type or "").split(";")[0].strip().lower()
+                if content_type not in _ACCEPTED_IMAGE_CONTENT_TYPES:
+                    continue
+                blob = part.blob
+                if not blob:
+                    continue
+                b64 = base64.standard_b64encode(blob).decode("ascii")
+                found.append((len(blob), {"b64": b64, "mime": content_type}))
+            except Exception:
+                continue  # one unreadable image part must never fail the whole upload
+    except Exception:
+        return []  # docx_bytes wasn't a valid .docx package at all
+
+    found.sort(key=lambda pair: pair[0], reverse=True)
+    return [img for _size, img in found[:_MAX_REFERENCE_IMAGES]]
 
 
 def extract_style_profile(docx_bytes: bytes) -> tuple[dict, list[str]]:

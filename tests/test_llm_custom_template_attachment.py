@@ -21,7 +21,7 @@ load_dotenv()  # core.llm reads CIM_MODEL at import time, same as server.py does
 
 from core.llm import generate_cim_html
 from tests.pdf_helpers import make_text_pdf
-from tests.template_helpers import make_text_docx, make_text_html
+from tests.template_helpers import make_text_docx, make_text_docx_with_image, make_text_html
 
 
 def _fake_client(captured: dict):
@@ -117,6 +117,93 @@ async def test_html_inlines_raw_markup_no_document_block():
     assert len(ref_blocks) == 1
     assert "My HTML Heading" in ref_blocks[0]["text"]
     assert "<style>" in ref_blocks[0]["text"]  # real markup, not stripped/summarized
+
+
+@pytest.mark.asyncio
+async def test_docx_with_embedded_image_attaches_it_as_vision_block():
+    """Regression guard for the .docx blind spot: before extract_reference_images,
+    a Word template's embedded images (logos, photos, decorative graphics) were
+    invisible to Claude — only flattened text made it into the prompt. Now the
+    image bytes ride along as a real vision block, same mechanism as any other
+    design-reference image."""
+    import base64
+    docx_bytes = make_text_docx_with_image()
+    docx_b64 = base64.standard_b64encode(docx_bytes).decode()
+    content = await _run(_template_with(docx_b64, "docx"))
+
+    image_blocks = [b for b in content if b.get("type") == "image"]
+    assert len(image_blocks) == 1
+    assert image_blocks[0]["source"]["media_type"] == "image/png"
+
+    caption_blocks = [
+        b for b in content
+        if b.get("type") == "text" and "embedded in the uploaded Word template" in b.get("text", "")
+    ]
+    assert len(caption_blocks) == 1
+
+
+@pytest.mark.asyncio
+async def test_docx_without_embedded_image_attaches_no_image_block():
+    import base64
+    docx_bytes = make_text_docx()  # no image in this fixture
+    docx_b64 = base64.standard_b64encode(docx_bytes).decode()
+    content = await _run(_template_with(docx_b64, "docx"))
+
+    assert not [b for b in content if b.get("type") == "image"]
+
+
+@pytest.mark.asyncio
+async def test_custom_template_prompt_puts_uploaded_design_ahead_of_default_spec():
+    """Static regression guard for the fidelity-priority fix: the composed prompt
+    for a custom-template job must state the uploaded file's design outranks this
+    prompt's own generic default spec, not just carry color/font overrides. Without
+    this, the default 'PAGE 1 — COVER' etc. specs are so much more detailed than a
+    short override that they win the model's attention regardless of what's uploaded."""
+    import base64
+    html_b64 = base64.standard_b64encode(make_text_html()).decode()
+    content = await _run(_template_with(html_b64, "html"))
+
+    prompt_blocks = [
+        b for b in content
+        if b.get("type") == "text" and "PRIORITY ORDER FOR THIS JOB" in b.get("text", "")
+    ]
+    assert len(prompt_blocks) == 1
+    prompt_text = prompt_blocks[0]["text"]
+
+    # The priority statement must precede the fallback spec it's overriding —
+    # ordering matters for how much attention a long prompt gives it (primacy).
+    priority_pos = prompt_text.index("PRIORITY ORDER FOR THIS JOB")
+    fallback_pos = prompt_text.index("PAGE 1 — COVER")
+    assert priority_pos < fallback_pos
+
+    # Explicitly names every fallback section it demotes, not just the cover.
+    for demoted_section in ("PAGE 1 — COVER", "PAGE 2 — TABLE OF CONTENTS", "KEY METRICS",
+                             "CONTENT SECTIONS", "SECTION FOOTER"):
+        assert demoted_section in prompt_text
+
+    # Data-accuracy rules must remain untouched — the priority-order rewrite is
+    # scoped to visual design only, never to relaxing the anti-fabrication rules.
+    assert "FINANCIAL NUMBER RULES" in prompt_text
+    assert "CRITICAL DATA RULES" in prompt_text
+
+
+@pytest.mark.asyncio
+async def test_builtin_template_path_never_gets_the_custom_fidelity_prefix():
+    """The priority-order prefix is specific to the uploaded-file job — the 5
+    built-in templates (marker path, chrome-rendered) have no uploaded file to
+    prioritize and must never see this text."""
+    captured: dict = {}
+    with patch("core.llm.get_client", return_value=_fake_client(captured)):
+        await generate_cim_html(
+            all_findings=[],
+            listing_xml="<listing/>",
+            listing_name="Acme Bakery",
+            asking_price="$500,000",
+            template_id="classic",
+            custom_template=None,
+        )
+    content = captured["messages"][0]["content"]
+    assert not [b for b in content if "PRIORITY ORDER FOR THIS JOB" in b.get("text", "")]
 
 
 @pytest.mark.asyncio

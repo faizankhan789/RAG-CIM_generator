@@ -11,6 +11,8 @@ from typing import Optional
 import pymysql
 import pymysql.cursors
 
+from core.pricing import estimate_price
+
 log = logging.getLogger(__name__)
 
 _DB_CONFIG = {
@@ -65,18 +67,6 @@ async def log_start(
     return await asyncio.get_event_loop().run_in_executor(None, _insert)
 
 
-_PRICE_PER_M_INPUT  = {"haiku": 0.80, "sonnet": 3.00, "opus": 15.00}
-_PRICE_PER_M_OUTPUT = {"haiku": 4.00, "sonnet": 15.00, "opus": 75.00}
-
-
-def _estimate_price(model: str, input_tokens: int, output_tokens: int) -> float:
-    m = model.lower()
-    tier = next((k for k in _PRICE_PER_M_INPUT if k in m), None)
-    in_rate  = _PRICE_PER_M_INPUT.get(tier, 1.00)
-    out_rate = _PRICE_PER_M_OUTPUT.get(tier, 5.00)
-    return round(input_tokens * in_rate / 1_000_000 + output_tokens * out_rate / 1_000_000, 8)
-
-
 async def log_complete(
     row_id: int,
     model: str,
@@ -86,7 +76,7 @@ async def log_complete(
     """UPDATE row on successful completion."""
     def _update():
         try:
-            price = _estimate_price(model, input_tokens, output_tokens)
+            price = estimate_price(model, input_tokens, output_tokens)
             conn = _connect()
             with conn.cursor() as cur:
                 cur.execute(

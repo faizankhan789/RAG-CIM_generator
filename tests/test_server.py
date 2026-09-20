@@ -408,9 +408,35 @@ def test_build_initial_state_defaults_custom_template_to_none():
     assert state["custom_template"] is None
 
 
+# ─── 9. featured_image wiring (image-upload popup) ───────────────────────────
+
+def test_build_initial_state_carries_featured_image():
+    req = CIMRequest(
+        listing_data=MINIMAL_LISTING,
+        featured_image={"b64": "AAAA", "mime": "image/png", "label": "Storefront"},
+    )
+    state = _build_initial_state(req)
+    assert state["featured_image"] == {"b64": "AAAA", "mime": "image/png", "label": "Storefront"}
+
+
+def test_build_initial_state_defaults_featured_image_to_none():
+    req = CIMRequest(listing_data=MINIMAL_LISTING)
+    state = _build_initial_state(req)
+    assert state["featured_image"] is None
+
+
 # ─── 9. /template/upload endpoint ────────────────────────────────────────────
 
 class TestTemplateUpload:
+    """IMPORTANT: audit_template_design (core/llm.py) makes a real Claude API
+    call. Every test in this class must go through a client fixture that has
+    it mocked — see the autouse fixture below — so no test here ever spends
+    real API credits, no matter which extraction path it exercises."""
+
+    @pytest.fixture(autouse=True)
+    def _no_real_design_audit(self):
+        with patch("server.audit_template_design", new=AsyncMock(return_value=None)):
+            yield
 
     def test_returns_template_and_warnings(self, client):
         from tests.pdf_helpers import make_text_pdf
@@ -425,6 +451,86 @@ class TestTemplateUpload:
         assert isinstance(body["warnings"], list)
         assert body["template"]["file_ext"] == "pdf"
         assert body["template"]["file_b64"]  # raw file round-trips for core/llm.py's vision attach
+        assert body["template"]["design_audit"] is None  # audit mocked off above -> graceful None
+
+    def test_includes_design_audit_when_it_succeeds(self, client):
+        from tests.pdf_helpers import make_text_pdf
+        fake_audit = {"cover": {"layout": "centered"}}
+        with patch("server.audit_template_design", new=AsyncMock(return_value=fake_audit)):
+            response = client.post(
+                "/template/upload",
+                files={"file": ("template.pdf", make_text_pdf(), "application/pdf")},
+            )
+        assert response.status_code == 200
+        assert response.json()["template"]["design_audit"] == fake_audit
+
+    def test_upload_still_succeeds_when_design_audit_raises(self, client):
+        """The audit is a fidelity upgrade, never a hard dependency — an
+        exception from it must never fail the upload itself."""
+        from tests.pdf_helpers import make_text_pdf
+        with patch("server.audit_template_design", new=AsyncMock(side_effect=RuntimeError("API down"))):
+            response = client.post(
+                "/template/upload",
+                files={"file": ("template.pdf", make_text_pdf(), "application/pdf")},
+            )
+        assert response.status_code == 200
+        assert response.json()["template"]["design_audit"] is None
+
+    def test_logs_real_audit_cost_when_tokens_were_spent(self, client):
+        """The core fix: audit_template_design's tokens must actually reach
+        template_store.log_template_audit — this was previously a silent
+        no-op because /template/upload never established a token-counting
+        context at all."""
+        from tests.pdf_helpers import make_text_pdf
+        from core.llm import MODEL, _add_tokens
+
+        async def fake_audit(file_b64, file_ext):
+            _add_tokens(500, 100)  # simulates what a real audit call would do internally
+            return {"cover": {"layout": "centered"}}
+
+        with patch("server.audit_template_design", new=fake_audit), \
+             patch("server.template_store.log_template_audit", new=AsyncMock(return_value=1)) as mock_log:
+            response = client.post(
+                "/template/upload",
+                files={"file": ("template.pdf", make_text_pdf(), "application/pdf")},
+                data={"callback_url": "https://crm.example.com/site/cimCallback"},
+            )
+
+        assert response.status_code == 200
+        assert response.json()["template"]["design_audit"] == {"cover": {"layout": "centered"}}
+        mock_log.assert_awaited_once_with("https://crm.example.com", "unknown", MODEL, 500, 100)
+
+    def test_does_not_log_cost_when_audit_returns_none_with_no_tokens(self, client):
+        """The autouse fixture's default mock (audit returns None, no tokens
+        spent) must never fire a cost-log call — nothing was actually spent."""
+        from tests.pdf_helpers import make_text_pdf
+        with patch("server.template_store.log_template_audit", new=AsyncMock(return_value=1)) as mock_log:
+            response = client.post(
+                "/template/upload",
+                files={"file": ("template.pdf", make_text_pdf(), "application/pdf")},
+            )
+        assert response.status_code == 200
+        mock_log.assert_not_awaited()
+
+    def test_cost_logging_failure_never_discards_a_successful_audit(self, client):
+        """Regression guard: cost-logging and the audit result must be fully
+        independent. A bug here previously would have wiped out a perfectly
+        good design_audit just because the unrelated logging step failed."""
+        from tests.pdf_helpers import make_text_pdf
+        from core.llm import _add_tokens
+
+        async def fake_audit(file_b64, file_ext):
+            _add_tokens(500, 100)
+            return {"cover": {"layout": "centered"}}
+
+        with patch("server.audit_template_design", new=fake_audit), \
+             patch("server.template_store.log_template_audit", new=AsyncMock(side_effect=RuntimeError("db down"))):
+            response = client.post(
+                "/template/upload",
+                files={"file": ("template.pdf", make_text_pdf(), "application/pdf")},
+            )
+        assert response.status_code == 200
+        assert response.json()["template"]["design_audit"] == {"cover": {"layout": "centered"}}
 
     def test_accepts_docx(self, client):
         from tests.template_helpers import make_text_docx

@@ -9,10 +9,14 @@ extractor by file extension. One entry point for server.py's
 - .html/.htm/.xml -> core/markup_style_extractor.py (regex CSS/inline-style
                      scan, best-effort, no CSS cascade resolution)
 
-No LLM in any of the above. The only place an LLM (Claude) ever sees the
-uploaded file is core/llm.py:generate_cim_html, where it's attached as a raw
-reference (vision for PDF, plain text otherwise) for visual/structural
-mimicry only — never for style extraction.
+No LLM in any of the above — every extraction here is deterministic. Claude
+does see the uploaded file in two other places, both in core/llm.py: once at
+upload time via audit_template_design (server.py's /template/upload calls it
+right after this module, for a richer design spec than these heuristics can
+produce) and again at generation time via generate_cim_html, where it's
+attached as a raw reference (vision for PDF, plain text otherwise) for
+visual/structural mimicry only — never for style extraction, and never to
+read its content.
 """
 
 from __future__ import annotations

@@ -40,6 +40,38 @@ def make_text_docx(
     return buf.getvalue()
 
 
+def make_text_docx_with_image(
+    heading: str = "Executive Summary",
+    body: str = "Some body copy about the business.",
+    image_size: tuple[int, int] = (80, 80),
+    image_color: tuple[int, int, int] = (200, 50, 50),
+) -> bytes:
+    """Same as make_text_docx() plus one embedded PNG — exercises
+    extract_reference_images()'s vision-attachment path."""
+    from docx import Document
+    from docx.shared import RGBColor
+    from PIL import Image
+
+    doc = Document()
+    heading_p = doc.add_paragraph(heading)
+    heading_p.style = doc.styles["Heading 1"]
+    heading_p.runs[0].font.color.rgb = RGBColor(0x1F, 0x4E, 0x79)
+    heading_p.runs[0].font.name = "Georgia"
+
+    body_p = doc.add_paragraph(body)
+    body_p.runs[0].font.name = "Arial"
+
+    img = Image.new("RGB", image_size, color=image_color)
+    img_buf = io.BytesIO()
+    img.save(img_buf, format="PNG")
+    img_buf.seek(0)
+    doc.add_picture(img_buf)
+
+    buf = io.BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
+
+
 def make_empty_docx() -> bytes:
     """A .docx with zero text runs — simulates a blank/unreadable document."""
     from docx import Document

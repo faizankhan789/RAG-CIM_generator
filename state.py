@@ -26,6 +26,7 @@ class CIMState(TypedDict):
     logo_url: str
     template_id: str
     custom_template: dict | None  # Extracted from an uploaded template file, see core/template_extractor.py
+    featured_image: dict | None  # User-uploaded photo to feature in the CIM. {"b64": str, "mime": str, "label": str}
 
     # After ingest: categorised file lists
     pdf_files: list[FileItem]
