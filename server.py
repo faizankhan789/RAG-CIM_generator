@@ -514,6 +514,8 @@ _TEMPLATE_CONTENT_TYPE_EXT = {
     "application/pdf": "pdf",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
     "application/msword": "doc",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation": "pptx",
+    "application/vnd.ms-powerpoint": "ppt",
     "text/html": "html",
     "application/xhtml+xml": "html",
     "text/xml": "xml",
@@ -529,7 +531,7 @@ async def template_upload(
     username: str = Form(""),
 ):
     """Extract a CIM template style (colors/fonts/layout) from an uploaded
-    PDF, Word (.docx), HTML, or XML file — deterministic, no LLM — then run
+    PDF, Word (.docx), PowerPoint (.pptx), HTML, or XML file — deterministic, no LLM — then run
     one dedicated LLM design-audit pass over the same file for a much richer
     design spec (see core.llm.audit_template_design). The audit runs once
     here, at upload time, not per-generation: its result is merged into the
@@ -552,7 +554,7 @@ async def template_upload(
     if ext not in _SUPPORTED_TEMPLATE_EXTENSIONS:
         raise HTTPException(
             status_code=400,
-            detail="Unsupported file type. Upload a PDF, Word (.docx), HTML, or XML file.",
+            detail="Unsupported file type. Upload a PDF, Word (.docx), PowerPoint (.pptx), HTML, or XML file.",
         )
     file_bytes = await file.read()
     try:
@@ -667,12 +669,15 @@ async def preview_saved_template(template_id: int, callback_url: str = "", crm_u
     if file_ext in ("html", "htm"):
         return HTMLResponse(content=raw_bytes.decode("utf-8", errors="ignore"))
 
-    # .docx/.doc/.xml: no native inline renderer — show the extracted text
-    # instead of a blank iframe, same graceful-degradation spirit as every
+    # .docx/.doc/.pptx/.ppt/.xml: no native inline renderer — show the extracted
+    # text instead of a blank iframe, same graceful-degradation spirit as every
     # other best-effort path in this file.
     try:
         if file_ext in ("docx", "doc"):
             from core.docx_style_extractor import extract_plain_text
+            text = extract_plain_text(raw_bytes)
+        elif file_ext in ("pptx", "ppt"):
+            from core.pptx_style_extractor import extract_plain_text
             text = extract_plain_text(raw_bytes)
         else:
             text = raw_bytes.decode("utf-8", errors="ignore")

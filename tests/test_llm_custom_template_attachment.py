@@ -1,6 +1,6 @@
 """Verifies generate_cim_html attaches the uploaded template file correctly
 per format — real vision/document block for PDF, inlined text for
-docx/html/xml — without making a real Claude API call. Mocks
+docx/pptx/html/xml — without making a real Claude API call. Mocks
 core.llm.get_client and captures the `messages` kwarg passed to
 client.messages.stream(...).
 """
@@ -21,7 +21,13 @@ load_dotenv()  # core.llm reads CIM_MODEL at import time, same as server.py does
 
 from core.llm import generate_cim_html
 from tests.pdf_helpers import make_text_pdf
-from tests.template_helpers import make_text_docx, make_text_docx_with_image, make_text_html
+from tests.template_helpers import (
+    make_text_docx,
+    make_text_docx_with_image,
+    make_text_html,
+    make_text_pptx,
+    make_text_pptx_with_image,
+)
 
 
 def _fake_client(captured: dict):
@@ -106,6 +112,20 @@ async def test_docx_inlines_extracted_text_no_document_block():
 
 
 @pytest.mark.asyncio
+async def test_pptx_inlines_extracted_text_no_document_block():
+    import base64
+    pptx_bytes = make_text_pptx(heading="My Custom Heading", body="My Custom Body")
+    pptx_b64 = base64.standard_b64encode(pptx_bytes).decode()
+    content = await _run(_template_with(pptx_b64, "pptx"))
+
+    assert not [b for b in content if b.get("type") == "document"]
+    ref_blocks = [b for b in content if b.get("type") == "text" and "DESIGN REFERENCE ONLY" in b.get("text", "")]
+    assert len(ref_blocks) == 1
+    assert "My Custom Heading" in ref_blocks[0]["text"]
+    assert "My Custom Body" in ref_blocks[0]["text"]
+
+
+@pytest.mark.asyncio
 async def test_html_inlines_raw_markup_no_document_block():
     import base64
     html_bytes = make_text_html(heading="My HTML Heading", body="My HTML Body")
@@ -148,6 +168,37 @@ async def test_docx_without_embedded_image_attaches_no_image_block():
     docx_bytes = make_text_docx()  # no image in this fixture
     docx_b64 = base64.standard_b64encode(docx_bytes).decode()
     content = await _run(_template_with(docx_b64, "docx"))
+
+    assert not [b for b in content if b.get("type") == "image"]
+
+
+@pytest.mark.asyncio
+async def test_pptx_with_embedded_image_attaches_it_as_vision_block():
+    """Same regression guard as the .docx case above, for .pptx: embedded
+    slide images (logos, photos, decorative graphics) must ride along as a
+    real vision block, not just get dropped along with the flattened text."""
+    import base64
+    pptx_bytes = make_text_pptx_with_image()
+    pptx_b64 = base64.standard_b64encode(pptx_bytes).decode()
+    content = await _run(_template_with(pptx_b64, "pptx"))
+
+    image_blocks = [b for b in content if b.get("type") == "image"]
+    assert len(image_blocks) == 1
+    assert image_blocks[0]["source"]["media_type"] == "image/png"
+
+    caption_blocks = [
+        b for b in content
+        if b.get("type") == "text" and "embedded in the uploaded PowerPoint template" in b.get("text", "")
+    ]
+    assert len(caption_blocks) == 1
+
+
+@pytest.mark.asyncio
+async def test_pptx_without_embedded_image_attaches_no_image_block():
+    import base64
+    pptx_bytes = make_text_pptx()  # no image in this fixture
+    pptx_b64 = base64.standard_b64encode(pptx_bytes).decode()
+    content = await _run(_template_with(pptx_b64, "pptx"))
 
     assert not [b for b in content if b.get("type") == "image"]
 

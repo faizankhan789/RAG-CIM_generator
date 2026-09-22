@@ -1383,8 +1383,8 @@ def _build_template_reference_blocks(file_b64: str, file_ext: str, intro_text: s
     drift out of sync on how each format is attached.
 
     PDF -> real document (vision) block, Claude sees the actual pages.
-    .docx -> flattened text + any embedded images as real vision blocks
-    (extract_reference_images) — .docx has no document-vision path.
+    .docx/.pptx -> flattened text + any embedded images as real vision blocks
+    (extract_reference_images) — neither format has a document-vision path.
     HTML/XML -> raw markup as text (already carries the real CSS values).
     """
     blocks: list[dict] = []
@@ -1398,13 +1398,23 @@ def _build_template_reference_blocks(file_b64: str, file_ext: str, intro_text: s
 
     raw_bytes = base64.standard_b64decode(file_b64)
     ref_images: list[dict] = []
+    source_label = "template"
     if file_ext in ("docx", "doc"):
         from core.docx_style_extractor import extract_plain_text, extract_reference_images
         raw_text = extract_plain_text(raw_bytes)
+        source_label = "Word template"
         try:
             ref_images = extract_reference_images(raw_bytes)
         except Exception as exc:
             log.error("Template reference: failed to extract images from .docx: %s", exc)
+    elif file_ext in ("pptx", "ppt"):
+        from core.pptx_style_extractor import extract_plain_text, extract_reference_images
+        raw_text = extract_plain_text(raw_bytes)
+        source_label = "PowerPoint template"
+        try:
+            ref_images = extract_reference_images(raw_bytes)
+        except Exception as exc:
+            log.error("Template reference: failed to extract images from .pptx: %s", exc)
     else:  # html, htm, xml
         raw_text = raw_bytes.decode("utf-8", errors="ignore")
 
@@ -1417,7 +1427,7 @@ def _build_template_reference_blocks(file_b64: str, file_ext: str, intro_text: s
         blocks.append({
             "type": "text",
             "text": (
-                "(Above is an image embedded in the uploaded Word template — design "
+                f"(Above is an image embedded in the uploaded {source_label} — design "
                 "reference only: mimic its visual style if relevant, never copy any "
                 "text/logo/figures from it into the output.)"
             ),

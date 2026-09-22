@@ -544,6 +544,18 @@ class TestTemplateUpload:
         assert body["template"]["id"] == "custom-upload"
         assert body["template"]["file_ext"] == "docx"
 
+    def test_accepts_pptx(self, client):
+        from tests.template_helpers import make_text_pptx
+        response = client.post(
+            "/template/upload",
+            files={"file": ("template.pptx", make_text_pptx(),
+                             "application/vnd.openxmlformats-officedocument.presentationml.presentation")},
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["template"]["id"] == "custom-upload"
+        assert body["template"]["file_ext"] == "pptx"
+
     def test_accepts_html(self, client):
         from tests.template_helpers import make_text_html
         response = client.post(
@@ -586,6 +598,13 @@ class TestTemplateUpload:
         response = client.post(
             "/template/upload",
             files={"file": ("legacy.doc", b"not a real ole package", "application/msword")},
+        )
+        assert response.status_code == 400
+
+    def test_rejects_unopenable_ppt(self, client):
+        response = client.post(
+            "/template/upload",
+            files={"file": ("legacy.ppt", b"not a real ole package", "application/vnd.ms-powerpoint")},
         )
         assert response.status_code == 400
 
