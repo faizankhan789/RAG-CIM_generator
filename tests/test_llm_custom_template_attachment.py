@@ -455,3 +455,11 @@ def test_invented_url_inside_a_sentence_is_removed():
     out = _strip_invented_contacts("<p>Book online at www.fake-hotel.com today</p>", "Acme Hotels")
     assert "fake-hotel" not in out
     assert "Book online at" in out and "today" in out
+
+
+@pytest.mark.asyncio
+async def test_prompt_forbids_copying_the_templates_table_contents():
+    """Real run: the Eden template's P&L (funeral-home row labels, its years, its
+    figures) was copied into a pizzeria CIM."""
+    prompt = await _prompt_text()
+    assert "never copy its row labels, years or line items" in prompt

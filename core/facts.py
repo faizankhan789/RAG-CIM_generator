@@ -537,3 +537,60 @@ def enforce_facts(html: str, facts: list[dict]) -> str:
         last = m.end()
     out.append(fix_markup(html[last:]))
     return "".join(out)
+
+
+# ── tables left with no real data ─────────────────────────────────────────────
+# Real run: a pizzeria CIM made from the Eden funeral-home template reproduced the
+# template's own P&L (its years, "Cremation", "Facility Fees"…); the figure guards
+# blanked every value to "—", leaving an empty funeral-home table. Any table (merged
+# cells or not) whose data cells are all "—" is removed; all-"—" rows are removed from
+# tables that do still have real data.
+
+_TR_RE = re.compile(r"<tr\b.*?</tr\s*>", re.IGNORECASE | re.DOTALL)
+_CELL_RE = re.compile(r"<t[hd]\b[^>]*>(.*?)</t[hd]\s*>", re.IGNORECASE | re.DOTALL)
+
+
+def _is_dash_like(text: str) -> bool:
+    return text.strip().lower() in _DASH_LIKE
+
+
+def _drop_empty_html_table(table: str) -> str:
+    if table.lower().count("<table") > 1:
+        return table                                   # nested tables: leave alone
+    rows = [(m, [_cell_text(c) for c in _CELL_RE.findall(m.group(0))]) for m in _TR_RE.finditer(table)]
+    data = [(m, cells) for i, (m, cells) in enumerate(rows) if i > 0 and len(cells) >= 2]
+    empty = [m for m, cells in data if all(_is_dash_like(c) for c in cells[1:])]
+    if not empty:
+        return table
+    if len(empty) == len(data):
+        return ""                                      # nothing real left in the whole table
+    for m in reversed(empty):
+        table = table[:m.start()] + table[m.end():]
+    return table
+
+
+def drop_empty_tables(html: str) -> str:
+    """Remove tables (HTML and built-in data-table JSON) with no real data left,
+    and all-"—" rows from the rest. Tables of text are never touched."""
+    def fix_component(m: re.Match) -> str:
+        if m.group(2) != "data-table":
+            return m.group(0)
+        try:
+            payload = json.loads(m.group(3))
+            rows = payload["rows"]
+            kept = [r for r in rows if not (isinstance(r, list) and len(r) >= 2 and all(_is_dash_like(str(c)) for c in r[1:]))]
+        except (json.JSONDecodeError, ValueError, KeyError, TypeError):
+            return m.group(0)
+        if len(kept) == len(rows):
+            return m.group(0)
+        if not kept:
+            return ""
+        return f"{m.group(1)}\n{json.dumps({**payload, 'rows': kept}, ensure_ascii=False)}\n{m.group(4)}"
+
+    out, last = [], 0
+    for m in _COMPONENT_RE.finditer(html):
+        out.append(_TABLE_RE.sub(lambda t: _drop_empty_html_table(t.group(0)), html[last:m.start()]))
+        out.append(fix_component(m))
+        last = m.end()
+    out.append(_TABLE_RE.sub(lambda t: _drop_empty_html_table(t.group(0)), html[last:]))
+    return "".join(out)

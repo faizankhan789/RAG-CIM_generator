@@ -17,7 +17,7 @@ import anthropic
 from datetime import date
 
 from core import extraction_cache
-from core.facts import enforce_facts, format_facts
+from core.facts import drop_empty_tables, enforce_facts, format_facts
 from core.section_matcher import CANONICAL_SECTIONS, match_sections
 from core.templates import get_template
 
@@ -310,7 +310,8 @@ especially the CRITICAL DATA RULES and FINANCIAL NUMBER RULES about never invent
 rounding, or fabricating a number — is absolute regardless of the uploaded template's design.
 Visual fidelity to the upload never means copying its own numbers, names, or wording: every
 word and figure in your output comes from the real listing data provided below, never from
-the reference file.
+the reference file. The template's tables are layout examples only —
+never copy its row labels, years or line items; build every table only from the listing's own data.
 
 ═══════════════════════════════════════════════
 SECTION LAYOUT COMPONENTS
@@ -2309,6 +2310,7 @@ async def generate_cim_html(
         html = _restore_exact_figures(html, source_text)
         html = _drop_untraceable_figures(html, source_text)
         html = enforce_facts(html, facts or [])
+        html = drop_empty_tables(html)
         if is_custom:
             html = _strip_invented_contacts(html, source_text)
             # Replace <!-- LOGO --> marker with actual img tag (Claude places it in cover top-bar left)

@@ -298,3 +298,48 @@ async def test_build_facts_timeout_falls_back_to_no_facts():
     client.messages.create = AsyncMock(side_effect=anthropic.APITimeoutError(request=MagicMock()))
     with patch("core.llm.get_client", return_value=client):
         assert await build_facts("", [SOURCE]) == []
+
+
+# ── empty tables left after the guards (real run: Eden template's P&L skeleton) ──
+
+from core.facts import drop_empty_tables
+
+EDEN_SKELETON = (
+    "<h2>Historical Financials</h2><table>"
+    "<tr><th>Metric</th><th>JAN - DEC 2019</th><th>JAN - DEC 2020</th></tr>"
+    '<tr><td colspan="3">Cost of Goods Sold</td></tr>'
+    "<tr><td>Cremation</td><td>—</td><td>—</td></tr>"
+    "<tr><td>Facility Fees</td><td>—</td><td>—</td></tr>"
+    "<tr><td>Gross Profit</td><td>—</td><td>—</td></tr></table><p>Next section</p>"
+)
+
+
+def test_table_with_no_real_data_left_is_removed_even_with_merged_cells():
+    out = drop_empty_tables(EDEN_SKELETON)
+    assert "<table" not in out and "Cremation" not in out
+    assert "<p>Next section</p>" in out
+
+
+def test_all_dash_rows_removed_but_table_with_real_data_kept():
+    html = ("<table><tr><th>Metric</th><th>FY2024</th></tr>"
+            "<tr><td>Revenue</td><td>£185,000.00</td></tr>"
+            "<tr><td>Cremation</td><td>—</td></tr></table>")
+    out = drop_empty_tables(html)
+    assert "£185,000.00" in out and "Cremation" not in out and "<table>" in out
+
+
+def test_text_only_tables_are_untouched():
+    html = "<table><tr><th>Location</th><th>Notes</th></tr><tr><td>Biggleswade</td><td>Prime site</td></tr></table>"
+    assert drop_empty_tables(html) == html
+
+
+def test_component_data_table_with_no_data_is_removed():
+    block = _block("data-table", {"headers": ["Metric", "2019", "2020"],
+                                  "rows": [["Cremation", "—", "—"], ["Transport", "—", "—"]]})
+    assert "C:data-table" not in drop_empty_tables("<p>a</p>" + block + "<p>b</p>")
+
+
+def test_component_data_table_keeps_rows_with_data():
+    out = drop_empty_tables(_block("data-table", {"headers": ["Metric", "FY2024"],
+                                                  "rows": [["Revenue", "£185,000.00"], ["Cremation", "—"]]}))
+    assert _payload(out, "data-table")["rows"] == [["Revenue", "£185,000.00"]]
