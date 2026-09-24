@@ -16,6 +16,7 @@ from typing import Any
 import anthropic
 from datetime import date
 
+from core import extraction_cache
 from core.facts import enforce_facts, format_facts
 from core.section_matcher import CANONICAL_SECTIONS, match_sections
 from core.templates import get_template
@@ -238,6 +239,14 @@ async def extract_from_content(
     Gated by _llm_sem so at most LLM_CONCURRENCY calls run simultaneously,
     preventing Claude API rate-limit errors when many files are processed.
     """
+    # Unchanged file + unchanged listing -> the findings saved last time, no Claude call
+    # (core/extraction_cache.py). Same findings in means the same CIM input.
+    key = extraction_cache.cache_key(content_blocks, listing_xml, _EXTRACTION_PROMPT, MODEL)
+    saved = await extraction_cache.get(key)
+    if saved is not None:
+        log.info("LLM extract: reusing saved findings for %r (file unchanged)", source_url)
+        return saved
+
     client = get_client()
     user_content: list[dict] = []
     if listing_xml:
@@ -260,10 +269,13 @@ async def extract_from_content(
                 **_sampling_kwargs(0.0),
             )
             _add_tokens(response.usage.input_tokens, response.usage.output_tokens)
-            return response.content[0].text.strip()
+            text = response.content[0].text.strip()
         except Exception as exc:
             log.error("Extraction failed (%s): %s", source_url, exc)
             return ""
+    if text:
+        await extraction_cache.put(key, text, MODEL)
+    return text
 
 
 # ── Final HTML generation ─────────────────────────────────────────────────────
