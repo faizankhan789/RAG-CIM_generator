@@ -15,9 +15,7 @@ from state import CIMState
 log = logging.getLogger(__name__)
 
 
-def _docx_to_text(path: Path) -> str:
-    from docx import Document
-    doc = Document(str(path))
+def _docx_doc_to_text(doc) -> str:
     lines = []
     for para in doc.paragraphs:
         text = para.text.strip()
@@ -27,6 +25,17 @@ def _docx_to_text(path: Path) -> str:
         for row in table.rows:
             lines.append("\t".join(cell.text.strip() for cell in row.cells))
     return "\n".join(lines)
+
+
+def _docx_to_text(path: Path) -> str:
+    from docx import Document
+    return _docx_doc_to_text(Document(str(path)))
+
+
+def _docx_bytes_to_text(data: bytes) -> str:
+    import io
+    from docx import Document
+    return _docx_doc_to_text(Document(io.BytesIO(data)))
 
 
 def _rtf_to_text(path: Path) -> str:
@@ -43,6 +52,17 @@ def _to_text(path: Path) -> str:
     if suffix in (".docx", ".docm"):
         return _docx_to_text(path)
     if suffix == ".doc":
+        # Legacy binary .doc — python-docx can't open it at all (that's what the
+        # bare _docx_to_text attempt below was silently failing on, falling through
+        # to reading raw OLE binary as text: mostly noise). Try a real LibreOffice
+        # conversion to .docx first; only fall back to the old best-effort path if
+        # LibreOffice itself is unavailable or the conversion fails.
+        try:
+            from core.office_convert import convert_legacy
+            converted, _new_ext = convert_legacy(path.read_bytes(), "doc")
+            return _docx_bytes_to_text(converted)
+        except Exception as exc:
+            log.error("Word: legacy .doc conversion failed, falling back to raw text: %s", exc)
         try:
             return _docx_to_text(path)
         except Exception:

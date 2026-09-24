@@ -594,19 +594,107 @@ class TestTemplateUpload:
         )
         assert response.status_code == 422
 
-    def test_rejects_unopenable_doc(self, client):
+    @pytest.mark.parametrize("name, mime", [
+        ("legacy.doc", "application/msword"),
+        ("legacy.ppt", "application/vnd.ms-powerpoint"),
+    ])
+    def test_legacy_ext_with_garbage_content_is_rejected(self, client, name, mime):
+        """Real soffice Writer never rejects a junk .doc — it "recovers" any
+        unparseable content as plain text and converts it successfully, which
+        used to turn a junk upload into a bogus default template (HTTP 200).
+        convert_legacy's OLE2 signature check now rejects it before soffice
+        runs, so both .doc and .ppt junk get a clean 400 — no soffice needed."""
         response = client.post(
             "/template/upload",
-            files={"file": ("legacy.doc", b"not a real ole package", "application/msword")},
+            files={"file": (name, b"not a real ole package", mime)},
         )
         assert response.status_code == 400
+        assert "convert" in response.json()["detail"].lower()
 
-    def test_rejects_unopenable_ppt(self, client):
+    def test_extensionless_filename_uses_content_type_fallback(self, client):
+        """A filename with no extension resolves its type from the content-type
+        fallback — the extractor must be handed that resolved ext, not the bare
+        filename (which used to fail as an unsupported type)."""
+        from tests.template_helpers import make_text_docx
         response = client.post(
             "/template/upload",
-            files={"file": ("legacy.ppt", b"not a real ole package", "application/vnd.ms-powerpoint")},
+            files={"file": ("mytemplate", make_text_docx(),
+                             "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
         )
+        assert response.status_code == 200
+        assert response.json()["template"]["file_ext"] == "docx"
+
+    def test_legacy_doc_is_converted_then_extracted(self, client):
+        """Wiring guard: a legacy .doc must be routed through convert_legacy
+        BEFORE extraction — the stored file_b64/file_ext must reflect the
+        CONVERTED .docx, not the original .doc bytes, so the design audit
+        and generation-time reference attachment (both keyed on file_ext)
+        work on content python-docx can actually open."""
+        import base64
+        from tests.template_helpers import make_text_docx
+        converted_bytes = make_text_docx()
+        with patch("server.convert_legacy", return_value=(converted_bytes, "docx")) as mock_convert:
+            response = client.post(
+                "/template/upload",
+                files={"file": ("legacy.doc", b"pretend legacy ole bytes", "application/msword")},
+            )
+        mock_convert.assert_called_once_with(b"pretend legacy ole bytes", "doc")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["template"]["file_ext"] == "docx"
+        assert base64.standard_b64decode(body["template"]["file_b64"]) == converted_bytes
+
+    def test_legacy_ppt_is_converted_then_extracted(self, client):
+        import base64
+        from tests.template_helpers import make_text_pptx
+        converted_bytes = make_text_pptx()
+        with patch("server.convert_legacy", return_value=(converted_bytes, "pptx")) as mock_convert:
+            response = client.post(
+                "/template/upload",
+                files={"file": ("legacy.ppt", b"pretend legacy ole bytes", "application/vnd.ms-powerpoint")},
+            )
+        mock_convert.assert_called_once_with(b"pretend legacy ole bytes", "ppt")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["template"]["file_ext"] == "pptx"
+        assert base64.standard_b64decode(body["template"]["file_b64"]) == converted_bytes
+
+    def test_legacy_conversion_failure_returns_clear_400(self, client):
+        from core.office_convert import LegacyConversionError
+        with patch("server.convert_legacy", side_effect=LegacyConversionError("soffice exploded")):
+            response = client.post(
+                "/template/upload",
+                files={"file": ("legacy.doc", b"pretend legacy ole bytes", "application/msword")},
+            )
         assert response.status_code == 400
+        assert "convert" in response.json()["detail"].lower()
+
+    def test_legacy_ppt_conversion_failure_returns_clear_400(self, client):
+        """.ppt counterpart — real soffice essentially never fails on .doc/.ppt
+        input (verified: it falls back to a lenient text-recovery import even
+        for garbage/empty/random-binary content), so the only way to reliably
+        exercise this 400 path is mocking the failure directly."""
+        from core.office_convert import LegacyConversionError
+        with patch("server.convert_legacy", side_effect=LegacyConversionError("soffice exploded")):
+            response = client.post(
+                "/template/upload",
+                files={"file": ("legacy.ppt", b"pretend legacy ole bytes", "application/vnd.ms-powerpoint")},
+            )
+        assert response.status_code == 400
+        assert "convert" in response.json()["detail"].lower()
+
+    def test_modern_docx_never_calls_convert_legacy(self, client):
+        """Only genuinely legacy .doc/.ppt should ever invoke the LibreOffice
+        subprocess — a real .docx must skip it entirely."""
+        from tests.template_helpers import make_text_docx
+        with patch("server.convert_legacy") as mock_convert:
+            response = client.post(
+                "/template/upload",
+                files={"file": ("template.docx", make_text_docx(),
+                                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
+            )
+        mock_convert.assert_not_called()
+        assert response.status_code == 200
 
 
 class TestPreviewSavedTemplate:

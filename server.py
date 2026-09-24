@@ -51,6 +51,7 @@ from core.template_extractor import (
     UnsupportedTemplateFileError,
     extract_style_profile,
 )
+from core.office_convert import LegacyConversionError, convert_legacy
 from core.templates import TEMPLATES
 from graph import cim_graph
 
@@ -557,8 +558,33 @@ async def template_upload(
             detail="Unsupported file type. Upload a PDF, Word (.docx), PowerPoint (.pptx), HTML, or XML file.",
         )
     file_bytes = await file.read()
+
+    if ext in ("doc", "ppt"):
+        # Legacy binary formats — python-docx/python-pptx can't open them at all, and
+        # neither can Claude's document-vision path later at generation time. Convert
+        # ONCE, here, to the modern format: extraction below, the stored file_b64/
+        # file_ext, the design audit, and the generation-time reference attachment
+        # all then transparently use the converted docx/pptx — no special-casing
+        # needed anywhere else in the upload/reuse pipeline.
+        try:
+            file_bytes, ext = await asyncio.get_event_loop().run_in_executor(
+                None, convert_legacy, file_bytes, ext
+            )
+        except LegacyConversionError as exc:
+            log.error("template_upload: legacy conversion failed: %s", exc)
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Couldn't convert this legacy file — it may be corrupted or "
+                    "password-protected. Please save it as .docx/.pptx or PDF and re-upload."
+                ),
+            )
+
     try:
-        template, warnings = extract_style_profile(file_bytes, filename or f"upload.{ext}")
+        # Always hand the extractor the RESOLVED ext, never the raw filename: the
+        # filename may have no extension (type came from the content-type fallback
+        # above), and after a legacy conversion ext is docx/pptx, not doc/ppt.
+        template, warnings = extract_style_profile(file_bytes, f"upload.{ext}")
     except NoExtractableTextError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     except UnsupportedTemplateFileError as exc:

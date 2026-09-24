@@ -15,9 +15,7 @@ from state import CIMState
 log = logging.getLogger(__name__)
 
 
-def _to_text(path: Path) -> str:
-    from pptx import Presentation
-    prs = Presentation(path)
+def _pptx_prs_to_text(prs) -> str:
     lines = []
     for i, slide in enumerate(prs.slides, start=1):
         lines.append(f"[Slide {i}]")
@@ -30,13 +28,34 @@ def _to_text(path: Path) -> str:
     return "\n".join(lines)
 
 
+def _to_text(path: Path) -> str:
+    from pptx import Presentation
+
+    if path.suffix.lower() == ".ppt":
+        # Legacy binary .ppt — python-pptx can't open it at all (Presentation()
+        # raises immediately). Convert to .pptx via LibreOffice first; if that
+        # fails, let the original error propagate as before (no prior fallback
+        # existed here to preserve).
+        import io
+        from core.office_convert import convert_legacy
+        converted, _new_ext = convert_legacy(path.read_bytes(), "ppt")
+        return _pptx_prs_to_text(Presentation(io.BytesIO(converted)))
+
+    return _pptx_prs_to_text(Presentation(path))
+
+
 async def _process_one(item: FileItem, listing_xml: str = "") -> ExtractedContent:
     label = item.label or item.url.split("/")[-1].split("?")[0]
     try:
         with FileTimer("ppt", label):
             if item.content:
                 import tempfile, base64 as _b64
-                with tempfile.NamedTemporaryFile(suffix=".pptx", delete=False) as tmp:
+                # Was hardcoded to ".pptx" regardless of the real uploaded extension —
+                # a legacy .ppt sent as inline content would get mislabeled .pptx and
+                # never reach the legacy-conversion branch in _to_text below, which
+                # keys off path.suffix. Match word.py's item.content handling.
+                suffix = "." + item.label.rsplit(".", 1)[-1] if item.label and "." in item.label else ".pptx"
+                with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
                     tmp.write(_b64.b64decode(item.content))
                     tmp_path = Path(tmp.name)
                 try:
