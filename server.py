@@ -35,6 +35,7 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 from urllib.parse import urlparse
 
+import pymupdf
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse, HTMLResponse, Response
@@ -51,7 +52,7 @@ from core.template_extractor import (
     UnsupportedTemplateFileError,
     extract_style_profile,
 )
-from core.office_convert import LegacyConversionError, convert_legacy
+from core.office_convert import LegacyConversionError, convert_legacy, convert_to_pdf
 from core.templates import TEMPLATES
 from graph import cim_graph
 
@@ -509,6 +510,13 @@ async def generate_cim_json(req: CIMRequest):
     return JSONResponse(content={"html": html, "errors": errors})
 
 
+# Upper bounds for a Word/PowerPoint template rendered to PDF (see template_upload):
+# Claude accepts at most 100 PDF pages on 200K-context models, and the whole request
+# (PDF base64 + listing images) must stay under 32 MB — 15 MB raw leaves headroom.
+_MAX_RENDERED_PDF_PAGES = 100
+_MAX_RENDERED_PDF_BYTES = 15 * 1024 * 1024
+
+
 # Content-type fallback for when a filename arrives without a usable extension —
 # extension is still checked first (see template_upload below).
 _TEMPLATE_CONTENT_TYPE_EXT = {
@@ -589,14 +597,43 @@ async def template_upload(
         raise HTTPException(status_code=422, detail=str(exc))
     except UnsupportedTemplateFileError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
-    # Carry the raw file back to the client so it round-trips into the later
+    # Word/PowerPoint: Claude's document vision only accepts PDF, so these used to
+    # reach Claude as flattened text + a few embedded images — their real layout
+    # was never visible. Render them to PDF once, here, and store THAT as the
+    # reference file: the design audit below, the generation-time attachment and
+    # the saved-template preview then all see the real pages with no other code
+    # changes. Best-effort — on failure the original docx/pptx is kept and the
+    # old text+images path still works.
+    ref_bytes, ref_ext = file_bytes, ext
+    if ext in ("docx", "pptx"):
+        try:
+            pdf_bytes = await asyncio.get_event_loop().run_in_executor(
+                None, convert_to_pdf, file_bytes, ext
+            )
+            try:
+                with pymupdf.open(stream=pdf_bytes, filetype="pdf") as rendered:
+                    pages = rendered.page_count
+            except Exception as exc:
+                raise LegacyConversionError(f"rendered PDF is unreadable: {exc}") from exc
+            if pages > _MAX_RENDERED_PDF_PAGES or len(pdf_bytes) > _MAX_RENDERED_PDF_BYTES:
+                # Claude's PDF limits (100 pages on 200K-context models, 32 MB per
+                # request incl. images) — past them every generation from this
+                # template would fail, so keep the original text+images path.
+                log.error("template_upload: rendered PDF too large (%d pages, %d bytes), keeping .%s",
+                          pages, len(pdf_bytes), ext)
+            else:
+                ref_bytes, ref_ext = pdf_bytes, "pdf"
+                template["source_ext"] = ext
+        except LegacyConversionError as exc:
+            log.error("template_upload: PDF render of .%s failed, keeping original: %s", ext, exc)
+    # Carry the reference file back to the client so it round-trips into the later
     # /generate-cim call's custom_template dict — core/llm.py attaches it as
     # an actual reference (vision document for PDF, plain text otherwise) so
     # Claude can see the real layout, not just the deterministic extraction
     # above. See core/llm.py:generate_cim_html.
-    file_b64 = base64.standard_b64encode(file_bytes).decode("utf-8")
+    file_b64 = base64.standard_b64encode(ref_bytes).decode("utf-8")
     template["file_b64"] = file_b64
-    template["file_ext"] = ext
+    template["file_ext"] = ref_ext
     # Scoped reset/read around just the audit call below — a request-local
     # token count, same ContextVar mechanism _run_job_pipeline uses per CIM
     # generation, just borrowed here for a single audit call instead of a
@@ -604,7 +641,7 @@ async def template_upload(
     # with a concurrent /generate-cim/stream's own counting.
     reset_token_counters()
     try:
-        template["design_audit"] = await audit_template_design(file_b64, ext)
+        template["design_audit"] = await audit_template_design(file_b64, ref_ext)
     except Exception as exc:
         # Best-effort fidelity upgrade — never fail the upload over it. The
         # deterministic extraction above still works fine on its own.

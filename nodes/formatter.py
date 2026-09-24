@@ -10,6 +10,7 @@ import httpx
 from datetime import date
 
 from core.cim_assembler import assemble
+from core.facts import build_facts
 from core.llm import generate_cim_html
 from state import CIMState
 
@@ -101,6 +102,10 @@ async def formatter_node(state: CIMState) -> dict:
         if logo_b64:
             brand_primary, brand_accent = _extract_brand_colors(logo_b64, logo_mime)
 
+    # Verified metric | period | value table — keeps every figure in its right place
+    # (core/facts.py). Empty on failure: generation then runs exactly as before.
+    facts = await build_facts(listing_xml, all_findings)
+
     log.info(
         "Formatter: generating CIM HTML (findings=%d, images=%d, logo=%s, brand=%s)",
         len(all_findings), len(all_images), bool(logo_b64), brand_primary or "none",
@@ -112,6 +117,7 @@ async def formatter_node(state: CIMState) -> dict:
         brand_primary=brand_primary, brand_accent=brand_accent,
         template_id=template_id,
         custom_template=custom_template,
+        facts=facts,
     )
 
     if custom_template:

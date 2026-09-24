@@ -4,6 +4,9 @@ FROM python:3.12-slim
 # libreoffice-writer/-impress: headless .doc/.ppt -> .docx/.pptx conversion for
 # legacy template uploads (core/office_convert.py) — no pip package exists for
 # this, it's invoked as a subprocess (soffice --headless), hence apt not requirements.txt.
+# LibreOffice also renders uploaded .docx/.pptx templates to PDF so Claude can see them;
+# fonts-liberation/-carlito/-caladea are metric-compatible stand-ins for Arial/Times/Courier/
+# Calibri/Cambria so that render keeps the template's real line breaks and layout.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libffi-dev \
@@ -12,6 +15,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libzstd-dev \
     libreoffice-writer \
     libreoffice-impress \
+    fonts-liberation \
+    fonts-crosextra-carlito \
+    fonts-crosextra-caladea \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

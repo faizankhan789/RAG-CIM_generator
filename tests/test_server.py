@@ -438,6 +438,99 @@ class TestTemplateUpload:
         with patch("server.audit_template_design", new=AsyncMock(return_value=None)):
             yield
 
+    @pytest.fixture(autouse=True)
+    def _no_real_pdf_render(self):
+        """docx/pptx -> PDF rendering is off by default here (as if soffice were
+        missing), so every other test sees the original file_ext unchanged and
+        never spawns LibreOffice. The PDF-render tests below override it."""
+        from core.office_convert import LegacyConversionError
+        with patch("server.convert_to_pdf", side_effect=LegacyConversionError("soffice not installed")):
+            yield
+
+    @pytest.mark.parametrize("name, make, mime", [
+        ("template.docx", "make_text_docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+        ("template.pptx", "make_text_pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation"),
+    ])
+    def test_word_and_powerpoint_are_stored_as_rendered_pdf(self, client, name, make, mime):
+        """Claude only has document vision for PDF — a docx/pptx template is
+        rendered to PDF at upload so the audit, generation and the saved
+        preview all see its real pages, not flattened text."""
+        import base64
+        from tests import template_helpers
+        source_ext = name.rsplit(".", 1)[1]
+        audit = AsyncMock(return_value=None)
+        import pymupdf
+        one_page = pymupdf.open()
+        one_page.new_page()
+        rendered = one_page.tobytes()
+        with patch("server.convert_to_pdf", return_value=rendered) as mock_pdf, \
+             patch("server.audit_template_design", new=audit):
+            response = client.post(
+                "/template/upload",
+                files={"file": (name, getattr(template_helpers, make)(), mime)},
+            )
+        assert response.status_code == 200
+        tpl = response.json()["template"]
+        assert mock_pdf.call_args[0][1] == source_ext
+        assert tpl["file_ext"] == "pdf"
+        assert tpl["source_ext"] == source_ext
+        assert base64.standard_b64decode(tpl["file_b64"]) == rendered
+        audit.assert_awaited_once_with(tpl["file_b64"], "pdf")   # audit sees the PDF too
+
+    def test_pdf_render_failure_keeps_original_docx(self, client):
+        """Rendering is a fidelity upgrade, never a hard dependency — if
+        LibreOffice fails, the upload still succeeds with the original file."""
+        from tests.template_helpers import make_text_docx
+        response = client.post(
+            "/template/upload",
+            files={"file": ("template.docx", make_text_docx(),
+                             "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
+        )
+        assert response.status_code == 200
+        tpl = response.json()["template"]
+        assert tpl["file_ext"] == "docx"
+        assert "source_ext" not in tpl
+
+    def test_render_over_claude_pdf_page_limit_keeps_original(self, client):
+        """Claude rejects PDFs over 100 pages (200K-context models such as Haiku
+        4.5). A big deck rendered past that must fall back to the original
+        text+images path, or every generation from it would fail."""
+        import pymupdf
+        from tests.template_helpers import make_text_pptx
+        doc = pymupdf.open()
+        for _ in range(101):
+            doc.new_page()
+        big_pdf = doc.tobytes()
+        with patch("server.convert_to_pdf", return_value=big_pdf):
+            response = client.post(
+                "/template/upload",
+                files={"file": ("deck.pptx", make_text_pptx(),
+                                 "application/vnd.openxmlformats-officedocument.presentationml.presentation")},
+            )
+        assert response.status_code == 200
+        assert response.json()["template"]["file_ext"] == "pptx"
+
+    def test_unreadable_rendered_pdf_keeps_original(self, client):
+        from tests.template_helpers import make_text_docx
+        with patch("server.convert_to_pdf", return_value=b"%PDF-1.7 truncated garbage"):
+            response = client.post(
+                "/template/upload",
+                files={"file": ("template.docx", make_text_docx(),
+                                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
+            )
+        assert response.status_code == 200
+        assert response.json()["template"]["file_ext"] == "docx"
+
+    def test_pdf_upload_is_never_re_rendered(self, client):
+        from tests.pdf_helpers import make_text_pdf
+        with patch("server.convert_to_pdf") as mock_pdf:
+            response = client.post(
+                "/template/upload",
+                files={"file": ("template.pdf", make_text_pdf(), "application/pdf")},
+            )
+        assert response.status_code == 200
+        mock_pdf.assert_not_called()
+
     def test_returns_template_and_warnings(self, client):
         from tests.pdf_helpers import make_text_pdf
         pdf_bytes = make_text_pdf()

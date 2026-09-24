@@ -10,11 +10,14 @@ import json
 import logging
 import os
 import re
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 import anthropic
 from datetime import date
 
+from core.facts import enforce_facts, format_facts
+from core.section_matcher import CANONICAL_SECTIONS, match_sections
 from core.templates import get_template
 
 log = logging.getLogger(__name__)
@@ -46,6 +49,17 @@ def _add_tokens(input_t: int, output_t: int) -> None:
     if t is not None:
         t["input"]  += input_t
         t["output"] += output_t
+
+# Low temperature keeps factual output (extraction, CIM figures) close to the source —
+# the SDK default is 1.0. Only sent to model families that accept sampling params:
+# newer models (Opus 4.7+/5, Sonnet 5, Fable) reject `temperature` with a 400, and an
+# unknown model id is treated the same way rather than risk breaking every call.
+_SAMPLING_MODEL_RE = re.compile(r"haiku-4-5|sonnet-4-[56]|opus-4-[56]|claude-3", re.IGNORECASE)
+
+
+def _sampling_kwargs(temperature: float) -> dict[str, float]:
+    return {"temperature": temperature} if _SAMPLING_MODEL_RE.search(MODEL) else {}
+
 
 # Max concurrent LLM extraction calls (env-tunable, default 5)
 _LLM_CONCURRENCY = int(os.getenv("LLM_CONCURRENCY", "5"))
@@ -243,6 +257,7 @@ async def extract_from_content(
                 model=MODEL,
                 max_tokens=MAX_TOKENS,
                 messages=[{"role": "user", "content": user_content}],
+                **_sampling_kwargs(0.0),
             )
             _add_tokens(response.usage.input_tokens, response.usage.output_tokens)
             return response.content[0].text.strip()
@@ -288,13 +303,15 @@ the reference file.
 ═══════════════════════════════════════════════
 SECTION LAYOUT COMPONENTS
 ═══════════════════════════════════════════════
-For each section body, pick component(s) from this library based on data volume and type.
-Do NOT force a fixed layout — adapt to what the data actually supports, and style every
-component to match the uploaded reference file's own visual language (colors, corner radius,
-borders, density, decoration), never a generic default look.
+TEMPLATE FIRST: lay out every section the way the uploaded template lays out its matching
+section (see SECTION-BY-SECTION LAYOUT in the override below, and the attached file itself) —
+reuse the template's own way of presenting KPIs, lists, tables, team members, images and
+callouts. Use the component library below ONLY for content the template has no equivalent for,
+and even then style it in the template's visual language (colors, corner radius, borders,
+density, decoration), never a generic default look.
 
 COMPONENT LIBRARY:
-▸ [stat-strip]      Horizontal KPI cards, each topped with a matching ICON SYSTEM glyph. Use when 3+ numeric metrics exist.
+▸ [stat-strip]      Horizontal KPI cards (with a matching ICON SYSTEM glyph only if the template uses icons). Use when 3+ numeric metrics exist.
 ▸ [narrative-pull]  Large pull-quote paragraph with accent left-border. For text-rich, metric-light sections.
 ▸ [two-col-60-40]   Left 60% narrative + right 40% highlight box. Good for overview/intro sections.
 ▸ [two-col-50-50]   Equal columns. Use when two equally weighted topics exist side by side.
@@ -312,10 +329,10 @@ COMPONENT LIBRARY:
 SELECTION RULES:
 - Sparse data (1-3 points) → [narrative-pull] or [two-col-60-40]
 - Rich financial data → [data-table] above or below a [stat-strip]
-- Trend across 2+ periods (revenue/EBITDA by year) → [chart-bar] beside its [data-table]; a composition/mix breakdown → [chart-donut] — the chart supplements the table, never replaces it
+- Trend across 2+ periods (revenue/EBITDA by year) → [chart-bar] beside its [data-table], one bar per period that HAS a source value; a composition/mix breakdown whose percentages the source states → [chart-donut] — the chart supplements the table, never replaces it
 - Team section → [card-grid-2] (≤4 people) or [card-grid-3] (5+)
 - Growth/strategy/roadmap → [timeline]
-- Never use identical layout for two adjacent sections — vary for visual rhythm
+- If the template repeats one page style across its sections, repeat it too — consistency with the template beats visual variety
 - Combine freely: e.g. [stat-strip] + [two-col-60-40] + [data-table] all in one section
 
 ═══════════════════════════════════════════════
@@ -325,7 +342,9 @@ A fixed set of inline monoline SVG icons. Copy the markup below VERBATIM (only t
 <svg> tag's width/height/color may change, via CSS) — never redraw a path or invent a new
 icon shape; hand-drawn path data renders broken or illegible at this scale.
 
-Icon usage is DELIBERATE, not decorative. Use icons ONLY in these places:
+Use icons ONLY if the uploaded template itself uses icons or pictograms — if it uses none, use no
+icons at all (plain markers matching the template instead). When it does, icon usage is
+DELIBERATE, not decorative — only in these places:
 1. Each [stat-strip] card — one icon above/beside the value (pick the closest semantic match
    below; skip the icon entirely rather than force a wrong one).
 2. Facilities/amenities/product [bullet-list] items — icon replaces the accent-dot bullet.
@@ -426,8 +445,8 @@ anywhere still defaults to the browser's native 300×150px, distorting the chart
     the single most important % or total.
   - A legend beside/below the donut: one colored dot + label + percentage per segment, in the
     same order and same colors as the arcs.
-  - Percentages MUST sum to ~100% and MUST be derived from real source figures (compute from
-    raw revenue amounts if the source gives amounts, not %) — never invented splits.
+  - Use a donut ONLY when the source itself states every segment's percentage — never compute
+    percentages yourself. If the source gives amounts only, show them in a [data-table] instead.
 
 Respect the uploaded reference file's own fill/style conventions (per the MANDATORY TEMPLATE
 OVERRIDE below) when rendering charts and icons: flat single-color fills where the reference
@@ -441,6 +460,9 @@ CRITICAL DATA RULES:
 - Copy ALL financial figures, percentages, dates EXACTLY as they appear in the source data — never round, abbreviate, or infer.
 - Include ONLY sections where you have actual data — skip sections with no content. If you skip a section, you MUST also remove its entry from the TABLE OF CONTENTS and renumber the remaining Roman numerals — a TOC entry with no matching rendered section is a bug.
 - Never invent metrics, names, or figures not present in the source data.
+- The template may show contact details (website link, phone, email, address) as part of its
+  design. Reproduce such an element ONLY with a real value from the source data —
+  never invent a website, phone number, email or address; if the source has none, leave it out.
 - STRICT STRUCTURE: Generate ONLY sections I through X as defined below. Do NOT create any section, heading, or topic outside this list. No bonus sections, no summaries, no additional pages beyond Cover, TOC, sections I–X, and a closing disclaimer page.
 - IGNORE internal CRM metadata: do NOT include CRM IDs, usernames, system dates, listing status, campaign IDs, NDA flags, or any other internal admin fields in the document. These are system fields, not business content.
 - EMPTY SUBTOPIC RULE: If a subtopic has no data, omit it entirely — do NOT show a heading with empty or placeholder content.
@@ -462,6 +484,12 @@ CRITICAL DATA RULES:
 - FORBIDDEN: projections or forecasts unless explicitly stated in source documents
 - If a financial figure is NOT in the source data, leave that subtopic out entirely — do not substitute, estimate, or approximate.
 - When in doubt: OMIT rather than invent.
+- MISSING = DROP: the design template supplies design only, never data. If the listing data has no
+  value for something, leave it out entirely — no table row, column/period, KPI card, chart bar or
+  sentence for it. A table cell with no source value shows "—"; never fill a gap with an estimate, a
+  midpoint, or another year's figure.
+- NEVER CALCULATE: no growth rates, CAGR, margins, ratios, averages, totals, differences or
+  percentages of any kind unless that exact figure appears in the source data.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━
 CIM STRUCTURE — 10 SECTIONS
@@ -601,7 +629,27 @@ TECHNICAL REQUIREMENTS
 - LOGO / DECORATIVE LAYERING: if the reproduced cover uses layered decorative elements (shapes, frames, brackets) behind the logo/title/confidentiality text, those text/logo elements must render at a HIGHER z-index than the decorative layer — a logo or title rendered behind, touching, or crossing through a decorative line/shape is a critical bug. Whenever you use position:absolute for a decorative layer, explicitly set and check z-index/stacking for every element that must sit above it.
 - ANTI-OVERLAP: every flex/grid child that can hold variable-length text must have `min-width:0` so it can actually shrink instead of overflowing its row; long words must use `overflow-wrap:break-word`. NEVER use position:absolute (or fixed) to place a content image or any other body content — that's reserved for a cover-page decorative/background layer only. Every content image and content element must sit in normal block/flex/grid flow so it can never overlap neighboring text or cards. Place images where they are CONTEXTUALLY relevant (e.g. a property photo near Property Details) and spread them through the document rather than clustering them all together.
 
-Return ONLY the complete HTML document starting with <!DOCTYPE html>. No explanation, no markdown fences."""
+═══════════════════════════════════════════════
+SELF-CHECK (run it before writing the final HTML)
+═══════════════════════════════════════════════
+Compare your planned document against the attached template, page by page:
+- Cover: same composition, background treatment (photo / color / plain) and title style as the template's cover?
+- Section headings: the template's own labels, case and numbering (or none), with its header treatment?
+- Each section laid out like its matching template page (columns, image placement, tables, callouts)?
+- No colored bands, gradients, shadows, icons or decorative shapes that the template doesn't have?
+- Same palette, fonts, spacing density and table/list style throughout?
+- Every number copied exactly from the source data, nothing taken from the template's own content?
+- No overflowing or overlapping text: every large KPI figure fits inside its box/card — make it fit
+  by shrinking the font size or giving the box more width, NEVER by abbreviating or rounding the
+  figure — it stays written exactly as the source data writes it?
+- No website/phone/email appears unless it is in the source data?
+
+OUTPUT FORMAT:
+1. First a short DESIGN PLAN in plain text (max 150 words): for the cover and each section you will
+   render, which template page it copies and its key visual elements. It is discarded automatically —
+   it only exists for you to plan with.
+2. Then the complete HTML document, starting with <!DOCTYPE html> and ending with </html>. Nothing
+   after </html>, no markdown fences."""
 
 
 _MARKER_PROMPT = """\
@@ -731,7 +779,7 @@ Two kinds of content go inside a section body:
   `icon` is one of the ICON SYSTEM names below (STEP 3) or omit it.
 
 ▸ C:data-table — any tabular/multi-period financial data:
-  {"headers":["Metric","2022","2023","2024"],"rows":[["Revenue","£1.2M","£1.4M","£1.6M"]],"footnote":"optional"}
+  {"headers":["Metric","2022","2023","2024"],"rows":[["Revenue","£1,200,000","£1,400,000","£1,600,000"]],"footnote":"optional"}
 
 ▸ C:chart-bar — trend across 2+ periods of the same metric (e.g. revenue by year). Supply
   RAW numeric values only — the renderer computes bar heights, scaling, and value-label
@@ -854,6 +902,12 @@ CRITICAL DATA RULES:
 - FORBIDDEN: projections or forecasts unless explicitly stated in source documents
 - If a financial figure is NOT in the source data, leave that subtopic out entirely — do not substitute, estimate, or approximate.
 - When in doubt: OMIT rather than invent.
+- MISSING = DROP: the design template supplies design only, never data. If the listing data has no
+  value for something, leave it out entirely — no table row, column/period, KPI card, chart bar or
+  sentence for it. A table cell with no source value shows "—"; never fill a gap with an estimate, a
+  midpoint, or another year's figure.
+- NEVER CALCULATE: no growth rates, CAGR, margins, ratios, averages, totals, differences or
+  percentages of any kind unless that exact figure appears in the source data.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━
 KEY METRICS (the <!-- STATS --> block, if used)
@@ -1259,6 +1313,67 @@ def _audit_layout_directive(audit: dict | None) -> str:
     return " ".join(bits)
 
 
+# Non-content pages a template's section map can point at (see _TEMPLATE_AUDIT_PROMPT's
+# "maps_to"), keyed by a lowercase substring of that value.
+_SPECIAL_PAGES = (
+    ("table of contents", "Table of contents"),  # before "cover": "table of contents / cover page" is a TOC
+    ("contents", "Table of contents"),
+    ("cover", "Cover"),
+    ("closing", "Closing / disclaimer page"),
+    ("disclaimer", "Closing / disclaimer page"),
+)
+
+
+# A heading carrying figures ("$7MM - MEZZ", "2023 RESULTS") is the template's own
+# data, not a reusable label — never shown to the model, never reused as a title.
+_DATA_IN_HEADING_RE = re.compile(r"[0-9$£€¥%]")
+
+
+def _audit_section_map(audit: dict | None) -> tuple[dict[str, str], list[str]]:
+    """Read the audit's per-section map (the "sections" list) into:
+    - canonical heading -> the template's own heading label (first match wins
+      when several template sections map to the same canonical section), and
+    - one layout line per template section/page, for the SECTION-BY-SECTION
+      LAYOUT block.
+    The deterministic extractor's heading match only knows a short synonym
+    table and usually matches 0-1 of 10 sections on real templates; the audit
+    actually looked at every page, so its labels win. Defensive against any
+    malformed shape — this is stored LLM output, and templates saved before
+    this feature have no "sections" at all (both return empty)."""
+    sections = audit.get("sections") if isinstance(audit, dict) else None
+    if not isinstance(sections, list):
+        return {}, []
+    headings: dict[str, str] = {}
+    layout_lines: list[str] = []
+    for sec in sections:
+        if not isinstance(sec, dict) or not isinstance(sec.get("maps_to"), str):
+            continue
+        # "Company Overview (continued)" -> "Company Overview"
+        maps_to = re.sub(r"\(.*?\)", "", sec["maps_to"]).strip()
+        heading = sec.get("template_heading")
+        heading = heading.strip() if isinstance(heading, str) else ""
+        if _DATA_IN_HEADING_RE.search(heading):
+            heading = ""
+        canonical = next(iter(match_sections([maps_to])), None)
+        if canonical:
+            label = canonical
+            if heading and len(heading) <= 80:
+                headings.setdefault(canonical, heading)
+        else:
+            lowered = maps_to.lower()
+            label = next((name for key, name in _SPECIAL_PAGES if key in lowered), None)
+            if label is None:
+                continue
+        layout = _clean_audit_val(sec.get("layout"))
+        if not layout:
+            continue
+        pages = _clean_audit_val(sec.get("pages"))
+        source = f"template page {pages}" if pages else "template"
+        shown_heading = f' "{heading}"' if heading else ""
+        layout_lines.append(f"- {label} ← {source}{shown_heading}: {layout}")
+    return headings, layout_lines
+
+
 def _build_template_directive(template: dict) -> str:
     """Build a prompt override block for a non-default design template. Empty for 'classic'."""
     if not template.get("palette"):
@@ -1266,10 +1381,39 @@ def _build_template_directive(template: dict) -> str:
 
     p = template["palette"]
     f = template["fonts"]
-    headings = template.get("headings") or {}
-    heading_lines = "\n".join(f'- "{old}" → "{new}"' for old, new in headings.items())
-
     design_audit = template.get("design_audit")
+
+    # Heading labels: canonical default <- deterministic match <- audit's section map
+    # (most reliable, it read every page). Every canonical section is always listed.
+    section_headings, section_layout_lines = _audit_section_map(design_audit)
+    headings = {h: h for h in CANONICAL_SECTIONS}
+    headings.update(template.get("headings") or {})
+    headings.update(section_headings)
+    heading_lines = "\n".join(f'- "{old}" → "{new}"' for old, new in headings.items())
+    if any("{Company}" in new for new in headings.values()):
+        heading_lines += "\nWhere a label contains {Company}, replace it with the real business name."
+
+    sh = design_audit.get("section_headers") if isinstance(design_audit, dict) else None
+    numbering = str(sh.get("numbering", "")).strip().lower() if isinstance(sh, dict) else ""
+    if numbering.startswith(("none", "no ", "unnumbered")):
+        heading_rule = (
+            "rename ONLY the displayed title text and show it WITHOUT Roman numerals (the "
+            "template doesn't number its section headings); keep the same order and same "
+            "underlying content/subtopics"
+        )
+    else:
+        heading_rule = (
+            "rename ONLY the displayed title text, keep the same order,\n"
+            "same Roman numeral, and same underlying content/subtopics"
+        )
+    section_layout_block = ""
+    if section_layout_lines:
+        section_layout_block = (
+            "\nSECTION-BY-SECTION LAYOUT (read from the template's own pages — lay out the cover, "
+            "each of our sections, and the closing page like its matching template page(s); this "
+            "takes priority over the generic SECTION LAYOUT COMPONENTS library):\n"
+            + "\n".join(section_layout_lines) + "\n"
+        )
     cover_override = _audit_cover_directive(design_audit) or template.get("cover_override") or ""
     section_header_override = (
         _audit_section_header_directive(design_audit) or template.get("section_header_override") or ""
@@ -1336,9 +1480,8 @@ COVER PAGE (mandatory):
 
 SECTION HEADER TREATMENT (mandatory — apply to every section, not just the cover):
 {section_header_override}
-
-SECTION HEADING LABELS — rename ONLY the displayed title text, keep the same order,
-same Roman numeral, and same underlying content/subtopics:
+{section_layout_block}
+SECTION HEADING LABELS — {heading_rule}:
 {heading_lines}
 """
 
@@ -1360,6 +1503,284 @@ as the `title="..."` attribute on the matching SECTION marker — same order, sa
 numeral, same underlying content/subtopics, only the displayed name changes:
 {heading_lines}
 """
+
+
+# ── Invented contact details (custom-template path) ──────────────────────────
+# Templates often show a website link / email on their cover or closing page, and
+# the model reproduces the element by inventing www.<business>.com even when the
+# prompt forbids it (seen on a real template). Enforced in code instead: any
+# website or email in the visible text that doesn't appear in the source data is
+# removed, together with a label like "Website Link:" left standing on its own.
+# Path part may not END in sentence punctuation: "visit www.x.com." -> "www.x.com".
+_URL_RE = re.compile(r"(?:https?://|www\.)[\w-]+(?:\.[\w-]+)+(?:[^\s<\"']*[^\s<\"'.,;:!?)])?", re.IGNORECASE)
+_EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+_CONTACT_LABEL_ONLY_RE = re.compile(
+    r"^\s*(?:website|web|site|url|e-?mail|contact)(?:\s+(?:link|us|address))?\s*:?\s*$", re.IGNORECASE,
+)
+_ANCHOR_RE = re.compile(r"<a\b[^>]*\bhref\s*=\s*[\"']([^\"']+)[\"'][^>]*>.*?</a>", re.IGNORECASE | re.DOTALL)
+_STYLE_OR_SCRIPT_RE = re.compile(r"(<(style|script)\b.*?</\2>)", re.IGNORECASE | re.DOTALL)
+_EMPTIED = "\x00"
+
+
+def _sub_markup(html: str, fn) -> str:
+    """Apply fn to every markup segment of html, leaving <style>/<script> blocks
+    (CSS url(...), JS strings) untouched. split() with 2 groups yields
+    [markup, <style>/<script> block, tag name, markup, ...]."""
+    out = []
+    for i, part in enumerate(_STYLE_OR_SCRIPT_RE.split(html)):
+        if i % 3 == 0:
+            out.append(fn(part))
+        elif i % 3 == 1:
+            out.append(part)
+    return "".join(out)
+
+
+def _contact_host(value: str) -> str:
+    v = value.lower().strip()
+    v = re.sub(r"^(?:https?://|mailto:)", "", v)
+    if "@" in v:
+        return v
+    return v.split("/", 1)[0].removeprefix("www.")
+
+
+def _strip_invented_contacts(html: str, source_text: str) -> str:
+    source = source_text.lower()
+
+    def known(value: str) -> bool:
+        return _contact_host(value) in source
+
+    def fix_anchor(m: re.Match) -> str:
+        href = m.group(1)
+        if re.match(r"(?:https?:|mailto:|www\.)", href, re.IGNORECASE) and not known(href):
+            return _EMPTIED
+        return m.group(0)
+
+    def fix_text(m: re.Match) -> str:
+        text = m.group(1)
+        new = _URL_RE.sub(lambda u: u.group(0) if known(u.group(0)) else "", text)
+        new = _EMAIL_RE.sub(lambda e: e.group(0) if known(e.group(0)) else "", new)
+        if new != text and (not new.strip() or _CONTACT_LABEL_ONLY_RE.match(new)):
+            return ">" + _EMPTIED + "<"
+        return ">" + new + "<"
+
+    result = _sub_markup(html, lambda seg: re.sub(r">([^<]+)<", fix_text, _ANCHOR_RE.sub(fix_anchor, seg)))
+    if _EMPTIED not in result:
+        return result
+    # A label that sat in its own element right before the removed value
+    # (<div>Website</div> www.x.com) goes too — it becomes part of what we emptied.
+    label_el = re.compile(
+        r"<(\w+)\b[^>]*>\s*(?:website|web|site|url|e-?mail|contact)(?:\s+(?:link|us|address))?\s*:?\s*</\1>\s*"
+        + _EMPTIED, re.IGNORECASE,
+    )
+    result = label_el.sub(_EMPTIED, result)
+    return _remove_emptied(result)
+
+
+_EMPTIED_EL_RE = re.compile(r"<(\w+)\b[^>]*>\s*(?:" + _EMPTIED + r"\s*)+</\1>")
+
+
+def _remove_emptied(html: str) -> str:
+    """Drop only the elements a guard emptied (marked with _EMPTIED), innermost
+    first — pre-existing empty decorative divs are never touched."""
+    while True:
+        reduced = _EMPTIED_EL_RE.sub("", html)
+        if reduced == html:
+            break
+        html = reduced
+    return html.replace(_EMPTIED, "")
+
+
+# ── Abbreviated money figures (both generation paths) ─────────────────────────
+# The model rounds/abbreviates figures ($14,200,000 -> "$14.2M", "$15M") despite the
+# FINANCIAL NUMBER RULES — seen in every real run, mostly in chart labels and prose.
+# An abbreviation that is a rounding of exactly ONE source figure is swapped back to
+# that exact figure. Anything else (the source itself writes it that way, several
+# source figures round to it, or it matches nothing = a figure the model computed)
+# is left in place — deleting a number mid-sentence would break the sentence — and
+# untraceable ones are logged for review.
+_ABBREV_FIGURE_RE = re.compile(
+    r"([$£€])\s?(\d+(?:\.\d+)?)\s?((?i:thousand|million|billion|bn)|MM|[kKmMbB])\b"
+)
+_FULL_FIGURE_RE = re.compile(r"([$£€])\s?(\d{1,3}(?:,\d{3})+|\d{4,})(\.\d+)?")
+# Raw CRM values in listing_xml often carry no currency symbol ("8500000.00") —
+# used only as a fallback, and only money-shaped numbers (comma-grouped, 6+ digits,
+# or 2 decimals) so a ZIP code or year never counts as a figure.
+_BARE_FIGURE_RE = re.compile(r"(?<![\w.,$£€])(\d{1,3}(?:,\d{3})+|\d{6,}|\d{4,}(?=\.\d{2}\b))(\.\d+)?(?![\w,])")
+_FIGURE_MULTIPLIER = {"k": 3, "thousand": 3, "m": 6, "mm": 6, "million": 6,
+                      "b": 9, "bn": 9, "billion": 9}   # powers of ten
+
+
+def _restore_exact_figures(html: str, source_text: str) -> str:
+    source_lower = " ".join(source_text.split()).lower()
+    source_figures: dict[str, dict[Decimal, str]] = {}
+    for m in _FULL_FIGURE_RE.finditer(source_text):
+        currency, whole, frac = m.group(1), m.group(2), m.group(3) or ""
+        value = Decimal(whole.replace(",", "") + frac)
+        source_figures.setdefault(currency, {}).setdefault(value, f"{currency}{whole}{frac}")
+    bare_figures = {Decimal(m.group(1).replace(",", "") + (m.group(2) or ""))
+                    for m in _BARE_FIGURE_RE.finditer(source_text)}
+
+    restored: list[str] = []
+    untraceable: list[str] = []
+
+    def fix(m: re.Match) -> str:
+        token = m.group(0)
+        if " ".join(token.split()).lower() in source_lower:
+            return token   # the source itself writes it this way
+        currency, number, unit = m.group(1), m.group(2), m.group(3).lower()
+        # Decimal + ROUND_HALF_UP: how a person rounds ($2,050,000 -> "$2.1M");
+        # float round() gives 2.0 there and would miss a genuine ambiguity.
+        target = Decimal(number)
+        quantum = Decimal(1).scaleb(target.as_tuple().exponent)
+        def rounds_to_target(value: Decimal) -> bool:
+            return value.scaleb(-_FIGURE_MULTIPLIER[unit]).quantize(quantum, ROUND_HALF_UP) == target
+
+        matches = [text for value, text in source_figures.get(currency, {}).items() if rounds_to_target(value)]
+        if not matches:
+            # Bare CRM value: written back with the abbreviation's own currency symbol
+            # and thousands separators — the exact value, just formatted.
+            matches = [f"{currency}{int(value):,}" + (f"{value % 1:.2f}"[1:] if value % 1 else "")
+                       for value in bare_figures if rounds_to_target(value)]
+        if len(matches) == 1:
+            restored.append(f"{token} -> {matches[0]}")
+            return matches[0]
+        if not matches:
+            untraceable.append(token)
+        return token
+
+    def fix_text(m: re.Match) -> str:
+        return ">" + _ABBREV_FIGURE_RE.sub(fix, m.group(1)) + "<"
+
+    # Wrapped in ">...<" so text before the first tag (marker-path output) is scanned too.
+    result = _sub_markup(">" + html + "<", lambda seg: re.sub(r">([^<]+)<", fix_text, seg))[1:-1]
+    if restored:
+        log.info("HTML gen: restored %d abbreviated figure(s) to exact source values: %s",
+                 len(restored), "; ".join(restored[:20]))
+    if untraceable:
+        log.warning("HTML gen: %d figure(s) not traceable to source data (left as written): %s",
+                    len(untraceable), ", ".join(sorted(set(untraceable))[:20]))
+    return result
+
+
+# ── Untraceable figures: drop them (both generation paths) ────────────────────
+# The template gives the design only; every money figure and percentage must come
+# from the listing data. Prompt rules alone don't hold (a real run invented a
+# midpoint FY2024 EBITDA and computed a "9.4% CAGR"), so anything whose value isn't
+# in the source is dropped: its sentence goes; a figure standing alone (table cell,
+# KPI value, chart label) becomes "—"; on the built-in path a KPI card / chart
+# period with an invented value is removed from its component JSON.
+_UNIT = r"(?:(?i:thousand|million|billion|bn)|MM|[kKmMbB])(?![A-Za-z])"
+_MONEY_RE = re.compile(r"[$£€]\s?(\d[\d,]*(?:\.\d+)?)(?:\s?(" + _UNIT + r"))?")
+_PERCENT_RE = re.compile(r"(?<![\w.])(\d+(?:\.\d+)?)\s?%")
+_SOURCE_NUMBER_RE = re.compile(r"(\d[\d,]*(?:\.\d+)?)(?:\s?(" + _UNIT + r"))?")
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
+_COMPONENT_BLOCK_RE = re.compile(r"(<!--\s*C:[\w-]+\s*-->)(.*?)(<!--\s*/C(?::[\w-]+)?\s*-->)", re.DOTALL)
+_DASH = "—"
+
+
+def _figure_value(number: str, unit: str | None) -> Decimal:
+    value = Decimal(number.replace(",", "").rstrip(".") or "0")
+    return value.scaleb(_FIGURE_MULTIPLIER[unit.lower()]) if unit else value
+
+
+def _drop_untraceable_figures(html: str, source_text: str) -> str:
+    known: set[Decimal] = set()
+    for m in _SOURCE_NUMBER_RE.finditer(source_text):
+        known.add(_figure_value(m.group(1), None))
+        if m.group(2):
+            known.add(_figure_value(m.group(1), m.group(2)))
+    dropped: list[str] = []
+
+    def untraceable_tokens(text: str) -> list[str]:
+        bad = [m.group(0) for m in _MONEY_RE.finditer(text) if _figure_value(m.group(1), m.group(2)) not in known]
+        bad += [m.group(0) for m in _PERCENT_RE.finditer(text) if _figure_value(m.group(1), None) not in known]
+        return bad
+
+    def clean_text(text: str) -> str | None:
+        """Text with untraceable figures removed; None if nothing is left."""
+        bad = untraceable_tokens(text)
+        if not bad:
+            return text
+        dropped.extend(bad)
+        rest = text
+        for token in bad:
+            rest = rest.replace(token, "")
+        if not re.search(r"[A-Za-z]", rest):          # the figure stands alone
+            for token in bad:
+                text = text.replace(token, _DASH)
+            return text
+        kept = [sent for sent in _SENTENCE_SPLIT_RE.split(text.strip()) if not untraceable_tokens(sent)]
+        if not kept:
+            return None
+        lead = text[:len(text) - len(text.lstrip())]
+        trail = text[len(text.rstrip()):]
+        return lead + " ".join(kept) + trail
+
+    def clean_markup(markup: str) -> str:
+        def fix_text(m: re.Match) -> str:
+            new = clean_text(m.group(1))
+            return ">" + (_EMPTIED if new is None else new) + "<"
+        # Wrapped in ">...<" so text before the first tag (marker output) is scanned too.
+        out = _sub_markup(">" + markup + "<", lambda seg: re.sub(r">([^<]+)<", fix_text, seg))[1:-1]
+        return _remove_emptied(out) if _EMPTIED in out else out
+
+    def value_ok(value: Any) -> bool:
+        if isinstance(value, bool):
+            return True
+        if isinstance(value, (int, float)):
+            ok = Decimal(str(value)) in known
+            if not ok:
+                dropped.append(str(value))
+            return ok
+        if isinstance(value, str):
+            return not untraceable_tokens(value)
+        return True
+
+    def clean_json(node: Any, in_row: bool = False) -> Any:
+        if isinstance(node, dict):
+            return {k: clean_json(v) for k, v in node.items()}
+        if isinstance(node, list):
+            items = []
+            for item in node:
+                if isinstance(item, dict) and "value" in item and not value_ok(item["value"]):
+                    if isinstance(item["value"], str):
+                        dropped.extend(untraceable_tokens(item["value"]))
+                    continue                           # KPI card / chart period / donut segment
+                if isinstance(item, list):
+                    items.append(clean_json(item, in_row=True))
+                elif isinstance(item, str):
+                    new = clean_markup(item) if "<" in item else clean_text(item)
+                    if new is not None and new.strip():
+                        items.append(new)
+                    elif in_row:
+                        items.append(_DASH)            # table cells keep their position
+                else:
+                    items.append(clean_json(item))
+            return items
+        if isinstance(node, str):
+            new = clean_markup(node) if "<" in node else clean_text(node)
+            return new if new is not None else ""
+        return node
+
+    parts = _COMPONENT_BLOCK_RE.split(html)   # [markup, open, payload, close, markup, ...]
+    out = []
+    for i, part in enumerate(parts):
+        if i % 4 == 0:
+            out.append(clean_markup(part))
+        elif i % 4 == 2:
+            try:
+                payload = json.loads(part)
+            except (json.JSONDecodeError, ValueError):
+                out.append(part)                     # malformed: the assembler skips it anyway
+                continue
+            cleaned = clean_json(payload)
+            out.append(part if cleaned == payload else "\n" + json.dumps(cleaned, ensure_ascii=False) + "\n")
+        else:
+            out.append(part)
+    if dropped:
+        log.warning("HTML gen: dropped %d figure(s) not found in the listing data: %s",
+                    len(dropped), ", ".join(sorted(set(dropped))[:30]))
+    return "".join(out)
 
 
 def _build_image_tag(img: dict, index: int) -> str:
@@ -1436,9 +1857,12 @@ def _build_template_reference_blocks(file_b64: str, file_ext: str, intro_text: s
 
 
 _TEMPLATE_AUDIT_PROMPT = """\
-Describe ONLY the visual design of the attached template file — never its text content,
+Describe ONLY the visual design of the attached template file — never its body text,
 never its numbers, never any company/business name it contains. Look at it the way a
-graphic designer would: composition, color, type, spacing, decoration.
+graphic designer would: composition, color, type, spacing, decoration. The one piece of
+wording you DO report is each section's heading label (in "sections" below), because the
+generated document reuses those labels — wherever a heading contains the template's own
+business/company name, write {Company} in its place.
 
 Return ONLY a single JSON object, no markdown fences, no explanation, matching exactly
 this schema (use "none" or "not visible" for any field that genuinely doesn't apply —
@@ -1468,7 +1892,8 @@ never invent a detail you can't actually see):
   "section_headers": {
     "style": "e.g. full-width colored band / plain with a thin rule beneath / no visual separation at all",
     "alignment": "left or center",
-    "decoration": "e.g. small numbered chip before the title / none"
+    "decoration": "e.g. small numbered chip before the title / none",
+    "numbering": "how section headings are numbered: roman / arabic / none"
   },
   "body_style": {
     "density": "e.g. generous whitespace / compact and dense",
@@ -1478,9 +1903,26 @@ never invent a detail you can't actually see):
     "list_style": "e.g. simple dash bullets / numbered / no lists present",
     "dividers": "e.g. thin horizontal rules between sections / none"
   },
-  "distinctive_motifs": "free text — anything signature/unusual about this specific template that the fields above don't capture, or 'none' if the design is plain"
+  "distinctive_motifs": "free text — anything signature/unusual about this specific template that the fields above don't capture, or 'none' if the design is plain",
+  "sections": [
+    {
+      "template_heading": "the section's heading label exactly as printed (same case, punctuation and wording style), with {Company} in place of the business's own name. If the label names a specific product, brand, person or place, write the closest generic label in the same style instead (e.g. \"WHAT IS ACCU-DART?\" -> \"WHAT WE OFFER\"). \"\" if the page has no heading or the heading is a figure/amount",
+      "maps_to": "the closest of: Executive Summary / Company Overview / Financial Information / Operations / Marketing and Sales / Legal and Regulatory / Human Resources / Growth Opportunities / Risks / Appendix — or cover / table of contents / closing for those pages, or other",
+      "pages": "page or slide number(s) this section occupies, e.g. 3 or 3-4",
+      "layout": "how this section's page(s) are composed: columns/grid, where images sit, tables/charts/cards/callout boxes, background treatment"
+    }
+  ]
 }
+
+List EVERY distinct section/page of the template in "sections", in document order — the cover
+and closing pages included.
 """
+
+
+# The upload request waits on the audit, and the SDK default is 600 s per try (x3 with
+# its 2 retries) — a real upload once hung ~10 min here on a slow API response. On a
+# timeout the upload still succeeds, just without the audit (see the except below).
+_AUDIT_TIMEOUT_SECONDS = 60
 
 
 async def audit_template_design(file_b64: str, file_ext: str) -> dict | None:
@@ -1522,8 +1964,10 @@ async def audit_template_design(file_b64: str, file_ext: str) -> dict | None:
         client = get_client()
         response = await client.messages.create(
             model=MODEL,
-            max_tokens=2048,
+            max_tokens=4096,  # room for the per-section map on multi-page templates
             messages=[{"role": "user", "content": content_blocks}],
+            timeout=_AUDIT_TIMEOUT_SECONDS,
+            **_sampling_kwargs(0.0),
         )
         _add_tokens(response.usage.input_tokens, response.usage.output_tokens)
         raw = response.content[0].text.strip()
@@ -1562,6 +2006,7 @@ async def generate_cim_html(
     brand_accent: str = "",
     template_id: str = "classic",
     custom_template: dict | None = None,
+    facts: list[dict] | None = None,
 ) -> str:
     """Send all per-file findings + listing context + images to Claude.
 
@@ -1596,6 +2041,22 @@ async def generate_cim_html(
                 "type": "text",
                 "text": f"## Document {i} Findings\n\n{finding}",
             })
+
+    # Verified metric | period | value table (core/facts.py) — the only allowed source
+    # of figures for tables, KPIs and charts; enforced again after generation.
+    if facts:
+        user_content.append({
+            "type": "text",
+            "text": (
+                "## VERIFIED FINANCIAL FACTS (metric | period | value)\n"
+                "Each value below was checked against the source data and is stated for exactly "
+                "that period. Every figure in a table, KPI card or chart MUST be one of these facts, "
+                "in the same metric AND the same period. If a metric has no fact for a period, that "
+                "cell is \"—\" — or leave that period out. Never move a figure to another period or "
+                "metric, and never put a figure without a period into a period column.\n\n"
+                + format_facts(facts)
+            ),
+        })
 
     # Filter out invalid/corrupt images before sending to Claude
     valid_images: list[tuple[int, dict]] = []
@@ -1793,6 +2254,7 @@ async def generate_cim_html(
             model=MODEL,
             max_tokens=MAX_HTML_TOKENS,
             messages=[{"role": "user", "content": user_content}],
+            **_sampling_kwargs(0.2),
         ) as stream:
             final_msg = await stream.get_final_message()
             html = final_msg.content[0].text
@@ -1812,8 +2274,13 @@ async def generate_cim_html(
             # actual document (e.g. "I'll create a premium CIM...\n```html\n<!DOCTYPE...").
             # Anchor on the real document boundaries rather than assuming the response
             # starts with a fence — the model doesn't always obey "no explanation".
-            doctype_match = re.search(r"<!DOCTYPE\s+html", html, re.IGNORECASE)
+            doctype_match = re.search(r"<!DOCTYPE\s+html|<html\b", html, re.IGNORECASE)
             if doctype_match:
+                # The prompt asks for a short DESIGN PLAN before the document — logged
+                # for debugging fidelity issues, never shipped in the CIM itself.
+                design_plan = html[:doctype_match.start()].strip()
+                if design_plan:
+                    log.info("HTML gen: design plan — %s", design_plan[:1500].replace("\n", " | "))
                 html = html[doctype_match.start():]
             html_end_match = re.search(r"</html\s*>", html, re.IGNORECASE)
             if html_end_match:
@@ -1825,7 +2292,13 @@ async def generate_cim_html(
         if html.endswith("```"):
             html = html.rsplit("```", 1)[0].strip()
 
+        # Everything the model was allowed to take figures/contacts from.
+        source_text = "\n".join([listing_xml, listing_name, asking_price, *all_findings])
+        html = _restore_exact_figures(html, source_text)
+        html = _drop_untraceable_figures(html, source_text)
+        html = enforce_facts(html, facts or [])
         if is_custom:
+            html = _strip_invented_contacts(html, source_text)
             # Replace <!-- LOGO --> marker with actual img tag (Claude places it in cover top-bar left)
             if logo_b64 and logo_mime:
                 logo_img = (

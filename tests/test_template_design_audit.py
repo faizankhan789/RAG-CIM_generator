@@ -408,3 +408,171 @@ class TestAuditDrivenCoverAndLayoutDirectives:
         directive = _build_template_directive(template)
         assert "full-bleed photo" in directive          # audit-driven cover
         assert "background color" in directive           # deterministic section-header fallback preserved
+
+
+class TestSectionMap:
+    """5b: the audit returns a per-section map of the template (its own heading
+    wording + each section's page layout), so the generated CIM reuses the
+    template's headings and lays each section out like its matching page."""
+
+    _BASE_TEMPLATE = {
+        "name": "Your Uploaded Template",
+        "palette": {"primary": "#000000", "accent": "#000000", "light": "#ffffff", "mid": "#000000"},
+        "fonts": {"heading": "serif", "body": "sans-serif"},
+        "layout_notes": "",
+        "cover_override": "",
+        "section_header_override": "",
+        "headings": {"II. Company Overview": "Overview"},  # weak deterministic match
+    }
+    _SECTIONS = [
+        {"template_heading": "", "maps_to": "cover", "pages": "1",
+         "layout": "full-bleed photo with a framed title block"},
+        {"template_heading": "INVESTMENT HIGHLIGHTS", "maps_to": "Executive Summary", "pages": "2",
+         "layout": "two columns: numbered highlight list left, KPI boxes right"},
+        {"template_heading": "ABOUT {Company}", "maps_to": "II. Company Overview", "pages": "3-4",
+         "layout": "photo band on top, three text columns below"},
+        {"template_heading": "THE NUMBERS", "maps_to": "Financials", "pages": "5",
+         "layout": "full-width table with a bar chart beneath"},
+    ]
+
+    def _directive(self, sections=None, **audit_extra):
+        audit = {"sections": self._SECTIONS if sections is None else sections, **audit_extra}
+        return _build_template_directive({**self._BASE_TEMPLATE, "design_audit": audit})
+
+    def test_template_heading_wording_replaces_canonical_titles(self):
+        directive = self._directive()
+        assert '"I. Executive Summary" → "INVESTMENT HIGHLIGHTS"' in directive
+        assert '"III. Financial Information" → "THE NUMBERS"' in directive   # synonym "Financials" understood
+
+    def test_audit_heading_wins_over_weak_deterministic_heading(self):
+        directive = self._directive()
+        assert '"II. Company Overview" → "ABOUT {Company}"' in directive
+        assert '"II. Company Overview" → "Overview"' not in directive
+
+    def test_company_placeholder_gets_replacement_instruction(self):
+        assert "{Company}" in self._directive()
+        assert "real business name" in self._directive()
+        plain = [s for s in self._SECTIONS if "{Company}" not in s["template_heading"]]
+        assert "real business name" not in self._directive(plain)
+
+    def test_section_by_section_layout_block_lists_each_section(self):
+        directive = self._directive()
+        assert "SECTION-BY-SECTION LAYOUT" in directive
+        assert "full-bleed photo with a framed title block" in directive          # cover
+        assert "numbered highlight list left, KPI boxes right" in directive       # exec summary
+        assert "page 5" in directive.lower() or "pages 5" in directive.lower()
+
+    def test_unmapped_or_malformed_entries_are_ignored_without_crashing(self):
+        junk = ["not a dict", {"maps_to": "Executive Summary"}, {"template_heading": 5, "maps_to": None},
+                {"template_heading": "RANDOM", "maps_to": "something unknown", "layout": "x"}]
+        directive = self._directive(junk)
+        assert '"I. Executive Summary" →' in directive   # canonical still listed, unchanged
+        assert "RANDOM" not in directive.split("SECTION HEADING LABELS")[-1]
+
+    def test_sections_not_a_list_is_ignored(self):
+        directive = self._directive("oops")
+        assert "SECTION-BY-SECTION LAYOUT" not in directive
+
+    def test_backward_compat_no_sections_means_no_new_block(self):
+        directive = _build_template_directive({**self._BASE_TEMPLATE, "design_audit": SAMPLE_AUDIT})
+        assert "SECTION-BY-SECTION LAYOUT" not in directive
+        assert '"II. Company Overview" → "Overview"' in directive
+
+    def test_unnumbered_template_drops_roman_numerals(self):
+        directive = self._directive(section_headers={"numbering": "none"})
+        assert "WITHOUT Roman numerals" in directive
+
+    def test_numbered_or_unknown_template_keeps_roman_numerals(self):
+        assert "WITHOUT Roman numerals" not in self._directive(section_headers={"numbering": "roman"})
+        assert "WITHOUT Roman numerals" not in self._directive()
+
+
+@pytest.mark.asyncio
+async def test_audit_prompt_requests_section_map_with_room_to_answer():
+    captured: dict = {}
+    client = _fake_client(json.dumps(SAMPLE_AUDIT), captured)
+    create = client.messages.create
+
+    async def _create(**kwargs):
+        captured["max_tokens"] = kwargs["max_tokens"]
+        return await create(**kwargs)
+
+    client.messages.create = _create
+    with patch("core.llm.get_client", return_value=client):
+        await audit_template_design(base64.standard_b64encode(make_text_pdf()).decode(), "pdf")
+    prompt = " ".join(b.get("text", "") for b in captured["messages"][0]["content"])
+    assert '"sections"' in prompt
+    assert '"template_heading"' in prompt
+    assert "{Company}" in prompt
+    assert '"numbering"' in prompt
+    assert captured["max_tokens"] >= 4096
+
+
+class TestSectionMapRealWorldEdgeCases:
+    """Found running real audits on the sample templates in Uploadtemplates/."""
+
+    _BASE = TestSectionMap._BASE_TEMPLATE
+
+    def _directive(self, sections):
+        return _build_template_directive({**self._BASE, "design_audit": {"sections": sections}})
+
+    def test_data_values_are_never_reused_as_section_titles(self):
+        # 1913 Studios: "$7MM - MEZZ" is a loan tranche, not a label.
+        directive = self._directive([
+            {"template_heading": "$7MM - MEZZ", "maps_to": "Financial Information", "pages": "1", "layout": "dark box"},
+            {"template_heading": "REVENUE HIGHLIGHTS", "maps_to": "Financial Information", "pages": "1", "layout": "orange box"},
+        ])
+        assert '"III. Financial Information" → "REVENUE HIGHLIGHTS"' in directive
+        assert '→ "$7MM - MEZZ"' not in directive
+        assert "dark box" in directive   # its layout is still used
+
+    def test_continued_pages_keep_their_layout(self):
+        # ECI: "Company Overview (continued)" was silently dropped.
+        directive = self._directive([
+            {"template_heading": "", "maps_to": "Company Overview (continued)", "pages": "3",
+             "layout": "split image with product intro"},
+        ])
+        assert "split image with product intro" in directive
+
+    def test_table_of_contents_page_is_not_labelled_as_a_second_cover(self):
+        # Kline: maps_to "table of contents / cover page".
+        directive = self._directive([
+            {"template_heading": "", "maps_to": "table of contents / cover page", "pages": "2", "layout": "boxed list"},
+        ])
+        assert "- Table of contents ← template page 2" in directive
+
+
+@pytest.mark.asyncio
+async def test_audit_prompt_asks_for_generic_reusable_heading_labels():
+    captured: dict = {}
+    with patch("core.llm.get_client", return_value=_fake_client(json.dumps(SAMPLE_AUDIT), captured)):
+        await audit_template_design(base64.standard_b64encode(make_text_pdf()).decode(), "pdf")
+    prompt = " ".join(b.get("text", "") for b in captured["messages"][0]["content"])
+    assert "product" in prompt and "generic" in prompt   # product/brand names get generic labels
+
+
+def test_numbering_answer_with_extra_explanation_still_counts_as_none():
+    # Real Eden audit: "none in text; page numbers appear as circled arabic numerals".
+    audit = {"section_headers": {"numbering": "none in text; page numbers appear as circled arabic numerals"}}
+    directive = _build_template_directive({**TestSectionMap._BASE_TEMPLATE, "design_audit": audit})
+    assert "WITHOUT Roman numerals" in directive
+
+
+@pytest.mark.asyncio
+async def test_audit_call_has_its_own_short_timeout():
+    """A real upload hung ~10 min on this call: the SDK default is 600 s per try
+    (x3 with retries). The upload waits on it, so it gets a short timeout; on
+    failure the upload still succeeds without the audit."""
+    from core.llm import _AUDIT_TIMEOUT_SECONDS
+    captured: dict = {}
+    client = _fake_client(json.dumps(SAMPLE_AUDIT))
+    create = client.messages.create
+
+    async def _create(**kwargs):
+        captured.update(kwargs)
+        return await create(**kwargs)
+
+    client.messages.create = _create
+    with patch("core.llm.get_client", return_value=client):
+        await audit_template_design(base64.standard_b64encode(make_text_pdf()).decode(), "pdf")
+    assert captured["timeout"] == _AUDIT_TIMEOUT_SECONDS <= 90

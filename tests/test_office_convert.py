@@ -160,3 +160,46 @@ def test_real_soffice_round_trip(tmp_path, ext, make):
     else:
         from pptx import Presentation
         assert len(Presentation(io.BytesIO(converted)).slides) >= 1
+
+
+# ── convert_to_pdf: modern .docx/.pptx -> PDF so Claude can SEE the template ──
+
+from core.office_convert import convert_to_pdf
+
+
+@pytest.mark.parametrize("ext", ["docx", "pptx"])
+def test_convert_to_pdf_returns_pdf_bytes(ext):
+    with patch("subprocess.run", side_effect=_mock_subprocess_writes_output(b"%PDF-1.7 fake")) as mock_run:
+        pdf = convert_to_pdf(b"PK\x03\x04 fake ooxml", ext)
+    assert pdf == b"%PDF-1.7 fake"
+    cmd = mock_run.call_args[0][0]
+    assert cmd[cmd.index("--convert-to") + 1] == "pdf"
+
+
+def test_convert_to_pdf_rejects_unsupported_extension():
+    with pytest.raises(LegacyConversionError):
+        convert_to_pdf(b"whatever", "html")
+
+
+def test_convert_to_pdf_raises_when_output_is_not_a_pdf():
+    with patch("subprocess.run", side_effect=_mock_subprocess_writes_output(b"not a pdf")):
+        with pytest.raises(LegacyConversionError):
+            convert_to_pdf(b"PK\x03\x04 fake ooxml", "docx")
+
+
+def test_convert_to_pdf_raises_when_soffice_missing():
+    with patch("subprocess.run", side_effect=FileNotFoundError("soffice")):
+        with pytest.raises(LegacyConversionError, match="not installed"):
+            convert_to_pdf(b"PK\x03\x04 fake ooxml", "pptx")
+
+
+@pytest.mark.skipif(shutil.which("soffice") is None, reason="requires a real soffice install")
+@pytest.mark.parametrize("ext, make", [("docx", "make_text_docx"), ("pptx", "make_text_pptx")])
+def test_real_soffice_convert_to_pdf(ext, make):
+    import pymupdf
+    from tests import template_helpers
+    pdf = convert_to_pdf(getattr(template_helpers, make)(heading="Executive Summary"), ext)
+    assert pdf.startswith(b"%PDF")
+    doc = pymupdf.open(stream=pdf, filetype="pdf")
+    assert doc.page_count >= 1
+    assert "Executive Summary" in "".join(page.get_text() for page in doc)

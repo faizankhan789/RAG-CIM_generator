@@ -271,3 +271,187 @@ async def test_no_attachment_block_when_file_b64_missing():
 
     assert not [b for b in content if "DESIGN REFERENCE ONLY" in b.get("text", "")]
     assert not [b for b in content if b.get("type") == "document"]
+
+
+async def _prompt_text() -> str:
+    import base64
+    content = await _run(_template_with(base64.standard_b64encode(make_text_html()).decode(), "html"))
+    return next(b["text"] for b in content if "MANDATORY TEMPLATE OVERRIDE" in b.get("text", ""))
+
+
+@pytest.mark.asyncio
+async def test_template_components_take_priority_over_generic_library():
+    """The generic component library (stat strips, card grids…) pulled output
+    toward one generic look; the template's own components must come first."""
+    prompt = await _prompt_text()
+    assert "TEMPLATE FIRST" in prompt
+    assert "Never use identical layout for two adjacent sections" not in prompt
+
+
+@pytest.mark.asyncio
+async def test_icons_only_when_the_template_uses_icons():
+    prompt = await _prompt_text()
+    assert "ONLY if the uploaded template itself uses icons" in prompt
+
+
+@pytest.mark.asyncio
+async def test_prompt_asks_for_design_plan_and_self_check():
+    prompt = await _prompt_text()
+    assert "DESIGN PLAN" in prompt
+    assert "SELF-CHECK" in prompt
+
+
+@pytest.mark.asyncio
+async def test_design_plan_before_doctype_is_stripped_from_output():
+    import base64
+    captured: dict = {}
+    client = _fake_client(captured)
+    reply = ("DESIGN PLAN: cover copies template page 1 (photo, framed title).\n\n"
+             "<!DOCTYPE html><html><body>real cim</body></html>")
+    final_msg = MagicMock(content=[MagicMock(text=reply)],
+                          usage=MagicMock(input_tokens=1, output_tokens=1), stop_reason="end_turn")
+    stream_cm = MagicMock()
+    stream_cm.__aenter__ = AsyncMock(return_value=MagicMock(get_final_message=AsyncMock(return_value=final_msg)))
+    stream_cm.__aexit__ = AsyncMock(return_value=False)
+    client.messages.stream = lambda **kw: stream_cm
+    with patch("core.llm.get_client", return_value=client):
+        html = await generate_cim_html(
+            all_findings=[], listing_xml="<listing/>", listing_name="Acme", asking_price="",
+            custom_template=_template_with(base64.standard_b64encode(make_text_html()).decode(), "html"),
+        )
+    assert html.startswith("<!DOCTYPE html>")
+    assert "DESIGN PLAN" not in html
+
+
+@pytest.mark.asyncio
+async def test_prompt_forbids_inventing_contact_details_the_template_shows():
+    """Real run: the Eden template shows a 'Website Link' on its cover and the
+    model invented www.<business>.com for a listing that had no website."""
+    prompt = await _prompt_text()
+    assert "never invent a website" in prompt.lower()
+
+
+@pytest.mark.asyncio
+async def test_self_check_covers_overflowing_kpi_numbers():
+    """Real run: large figures overflowed narrow KPI boxes and overlapped."""
+    prompt = await _prompt_text()
+    self_check = prompt.split("SELF-CHECK", 1)[1]
+    assert "overlap" in self_check.lower()
+
+
+class TestStripInventedContacts:
+    """Real run: even with an explicit prompt rule, the model kept inventing
+    www.<business>.com because the template's cover shows a website link.
+    Enforced in code: a website/email that isn't in the source data is removed."""
+
+    def _strip(self, html, source="Anchor & Vine Hospitality Group, Gulf Coast"):
+        from core.llm import _strip_invented_contacts
+        return _strip_invented_contacts(html, source)
+
+    def test_invented_website_link_is_removed(self):
+        html = ('<html><body><div class="cover"><h1>Anchor</h1>'
+                '<a href="https://www.anchorandvinehospitality.com">www.anchorandvinehospitality.com</a>'
+                '</div></body></html>')
+        out = self._strip(html)
+        assert "anchorandvinehospitality" not in out
+        assert "<h1>Anchor</h1>" in out
+
+    def test_invented_bare_url_and_email_text_removed_with_their_label(self):
+        html = "<p>Website Link: www.fake-site.com</p><p>Contact: info@fake-site.com</p><p>Keep me</p>"
+        out = self._strip(html)
+        assert "fake-site" not in out
+        assert "Website Link" not in out
+        assert "<p>Keep me</p>" in out
+
+    def test_real_website_from_source_data_is_kept(self):
+        html = '<p>Website: <a href="https://www.realhotel.com">www.realhotel.com</a></p>'
+        out = self._strip(html, source="<website>https://www.realhotel.com/</website>")
+        assert "www.realhotel.com" in out
+
+    def test_attribute_urls_like_svg_namespace_are_untouched(self):
+        html = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"></svg>'
+        assert self._strip(html) == html
+
+
+@pytest.mark.asyncio
+async def test_generate_cim_html_strips_invented_website():
+    import base64
+    client = _fake_client({})
+    reply = ('<!DOCTYPE html><html><body><p>Anchor</p>'
+             '<p>www.inventedsite.com</p></body></html>')
+    final_msg = MagicMock(content=[MagicMock(text=reply)],
+                          usage=MagicMock(input_tokens=1, output_tokens=1), stop_reason="end_turn")
+    stream_cm = MagicMock()
+    stream_cm.__aenter__ = AsyncMock(return_value=MagicMock(get_final_message=AsyncMock(return_value=final_msg)))
+    stream_cm.__aexit__ = AsyncMock(return_value=False)
+    client.messages.stream = lambda **kw: stream_cm
+    with patch("core.llm.get_client", return_value=client):
+        html = await generate_cim_html(
+            all_findings=["Anchor runs hotels."], listing_xml="<listing/>", listing_name="Anchor", asking_price="",
+            custom_template=_template_with(base64.standard_b64encode(make_text_html()).decode(), "html"),
+        )
+    assert "inventedsite" not in html
+
+
+def test_strip_invented_contacts_leaves_style_blocks_alone():
+    from core.llm import _strip_invented_contacts
+    html = ("<html><head><style>.c{background:url(https://example.com/x.png)}</style></head>"
+            "<body><p>www.fake.com</p><p>Real</p></body></html>")
+    out = _strip_invented_contacts(html, "")
+    assert "url(https://example.com/x.png)" in out
+    assert "www.fake.com" not in out
+    assert "<p>Real</p>" in out
+
+
+def test_strip_invented_contacts_removes_a_label_element_left_next_to_the_url():
+    # Real Eden output: label in its own element, URL as the sibling text node.
+    from core.llm import _strip_invented_contacts
+    html = ('<div class="closing"><div class="item">'
+            '<div class="closing-contact-label">Website</div>\n    www.madeup.com\n</div>'
+            '<div class="item"><div class="closing-contact-label">Asking Price</div>$8,500,000</div></div>')
+    out = _strip_invented_contacts(html, "$8,500,000")
+    assert "Website" not in out
+    assert "madeup" not in out
+    assert "Asking Price" in out and "$8,500,000" in out
+
+
+@pytest.mark.asyncio
+async def test_kpi_fit_rule_never_trades_exact_figures_for_space():
+    """Real run: told to make KPI figures fit, the model abbreviated
+    $14,200,000 to $14.2M — the fit rule must forbid that explicitly."""
+    self_check = (await _prompt_text()).split("SELF-CHECK", 1)[1]
+    assert "NEVER by abbreviating" in self_check
+
+
+def test_real_url_at_end_of_sentence_is_kept():
+    from core.llm import _strip_invented_contacts
+    html = "<p>Visit www.realhotel.com.</p>"
+    assert _strip_invented_contacts(html, "Website: www.realhotel.com") == html
+
+
+@pytest.mark.asyncio
+async def test_design_plan_is_stripped_even_without_doctype():
+    import base64
+    client = _fake_client({})
+    reply = "DESIGN PLAN: cover copies page 1.\n\n<html><body>real cim</body></html>"
+    final_msg = MagicMock(content=[MagicMock(text=reply)],
+                          usage=MagicMock(input_tokens=1, output_tokens=1), stop_reason="end_turn")
+    stream_cm = MagicMock()
+    stream_cm.__aenter__ = AsyncMock(return_value=MagicMock(get_final_message=AsyncMock(return_value=final_msg)))
+    stream_cm.__aexit__ = AsyncMock(return_value=False)
+    client.messages.stream = lambda **kw: stream_cm
+    with patch("core.llm.get_client", return_value=client):
+        html = await generate_cim_html(
+            all_findings=[], listing_xml="<listing/>", listing_name="Acme", asking_price="",
+            custom_template=_template_with(base64.standard_b64encode(make_text_html()).decode(), "html"),
+        )
+    assert html.startswith("<html>")
+    assert "DESIGN PLAN" not in html
+
+
+def test_invented_url_inside_a_sentence_is_removed():
+    # Review finding: edits were discarded when no whole element got emptied.
+    from core.llm import _strip_invented_contacts
+    out = _strip_invented_contacts("<p>Book online at www.fake-hotel.com today</p>", "Acme Hotels")
+    assert "fake-hotel" not in out
+    assert "Book online at" in out and "today" in out
