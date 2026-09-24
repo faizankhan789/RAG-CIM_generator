@@ -28,9 +28,11 @@ log = logging.getLogger("cim_server")
 
 import asyncio
 import base64
+import hashlib
 import json
 import time
 import uuid
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Any, Optional
 from urllib.parse import urlparse
@@ -53,6 +55,7 @@ from core.template_extractor import (
     extract_style_profile,
 )
 from core.office_convert import LegacyConversionError, convert_legacy, convert_to_pdf
+from core.lorem_preview import lorem_html, lorem_pdf, lorem_text
 from core.templates import TEMPLATES
 from graph import cim_graph
 
@@ -705,14 +708,61 @@ async def get_saved_template(template_id: int, callback_url: str = "", crm_url: 
     return JSONResponse(content={"template": template})
 
 
+# Lorem previews are built on first view and kept in memory (keyed by the file itself),
+# so re-opening a preview is instant and nothing extra is stored in the DB.
+_lorem_preview_cache: "OrderedDict[str, tuple[bytes, str]]" = OrderedDict()
+_LOREM_PREVIEW_CACHE_MAX = 32
+
+
+def _text_preview_page(text: str) -> bytes:
+    import html as _html
+    return (
+        "<div style='font-family:sans-serif;padding:2rem;white-space:pre-wrap;line-height:1.6;'>"
+        "<p style='color:#6b7280;font-style:italic;margin-bottom:1rem;'>"
+        "Live preview isn't available for this file type — showing its text layout instead.</p>"
+        f"{_html.escape(text)}</div>"
+    ).encode("utf-8")
+
+
+def _build_lorem_preview(raw_bytes: bytes, file_ext: str) -> tuple[bytes, str]:
+    """The template's own design with all its text swapped for lorem ipsum
+    (core/lorem_preview.py). Returns (content, media_type)."""
+    if file_ext == "pdf":
+        try:
+            return lorem_pdf(raw_bytes), "application/pdf"
+        except Exception as exc:
+            # Never fall back to the original file — that would show its real content.
+            log.error("preview_saved_template: lorem PDF failed: %s", exc)
+            return (b"<div style='font-family:sans-serif;padding:2rem;color:#6b7280;'>"
+                    b"No preview available for this template.</div>"), "text/html"
+    if file_ext in ("html", "htm"):
+        return lorem_html(raw_bytes.decode("utf-8", errors="ignore")).encode("utf-8"), "text/html"
+    if file_ext in ("docx", "pptx"):
+        # Saved before Word/PowerPoint were rendered to PDF at upload — render now.
+        try:
+            return lorem_pdf(convert_to_pdf(raw_bytes, file_ext)), "application/pdf"
+        except LegacyConversionError as exc:
+            log.error("preview_saved_template: PDF render failed, text fallback: %s", exc)
+    try:
+        if file_ext in ("docx", "doc"):
+            from core.docx_style_extractor import extract_plain_text
+            text = extract_plain_text(raw_bytes)
+        elif file_ext in ("pptx", "ppt"):
+            from core.pptx_style_extractor import extract_plain_text
+            text = extract_plain_text(raw_bytes)
+        else:
+            text = raw_bytes.decode("utf-8", errors="ignore")
+    except Exception as exc:
+        log.error("preview_saved_template: text extraction failed: %s", exc)
+        text = "(Could not read this file's content for preview.)"
+    return _text_preview_page(lorem_text(text)), "text/html"
+
+
 @app.get("/template/saved/{template_id}/preview")
 async def preview_saved_template(template_id: int, callback_url: str = "", crm_url: str = ""):
-    """Render the saved template's own uploaded file for the preview iframe
-    (see previewSavedCustomTemplate in view.php) — this is the actual
-    reference file the user uploaded, not a generated CIM. PDF/HTML render
-    natively in an iframe; .docx/.doc/.xml have no browser-native inline
-    renderer, so those fall back to the extracted plain text instead of a
-    blank/broken frame."""
+    """Preview for the picker (previewSavedCustomTemplate in view.php): the saved
+    template's own design with its text replaced by lorem ipsum, so the original
+    company's content never shows. Generation still uses the real file."""
     resolved = _derive_crm_url(crm_url, callback_url) or "unknown"
     template = await template_store.get_template(template_id, resolved)
     if template is None:
@@ -726,35 +776,18 @@ async def preview_saved_template(template_id: int, callback_url: str = "", crm_u
             "No preview available for this template.</div>"
         )
 
-    raw_bytes = base64.standard_b64decode(file_b64)
-    if file_ext == "pdf":
-        return Response(content=raw_bytes, media_type="application/pdf")
-    if file_ext in ("html", "htm"):
-        return HTMLResponse(content=raw_bytes.decode("utf-8", errors="ignore"))
-
-    # .docx/.doc/.pptx/.ppt/.xml: no native inline renderer — show the extracted
-    # text instead of a blank iframe, same graceful-degradation spirit as every
-    # other best-effort path in this file.
-    try:
-        if file_ext in ("docx", "doc"):
-            from core.docx_style_extractor import extract_plain_text
-            text = extract_plain_text(raw_bytes)
-        elif file_ext in ("pptx", "ppt"):
-            from core.pptx_style_extractor import extract_plain_text
-            text = extract_plain_text(raw_bytes)
-        else:
-            text = raw_bytes.decode("utf-8", errors="ignore")
-    except Exception as exc:
-        log.error("preview_saved_template: text extraction failed: %s", exc)
-        text = "(Could not read this file's content for preview.)"
-
-    import html as _html
-    return HTMLResponse(
-        "<div style='font-family:sans-serif;padding:2rem;white-space:pre-wrap;line-height:1.6;'>"
-        "<p style='color:#6b7280;font-style:italic;margin-bottom:1rem;'>"
-        "Live preview isn't available for this file type — showing its extracted text instead.</p>"
-        f"{_html.escape(text)}</div>"
-    )
+    key = hashlib.sha256(f"{file_ext}:{file_b64}".encode("utf-8")).hexdigest()
+    cached = _lorem_preview_cache.get(key)
+    if cached is None:
+        raw_bytes = base64.standard_b64decode(file_b64)
+        cached = await asyncio.get_event_loop().run_in_executor(None, _build_lorem_preview, raw_bytes, file_ext)
+        _lorem_preview_cache[key] = cached
+        while len(_lorem_preview_cache) > _LOREM_PREVIEW_CACHE_MAX:
+            _lorem_preview_cache.popitem(last=False)
+    else:
+        _lorem_preview_cache.move_to_end(key)
+    content, media_type = cached
+    return Response(content=content, media_type=media_type)
 
 
 @app.get("/template-preview/{template_id}")

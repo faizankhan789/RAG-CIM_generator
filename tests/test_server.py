@@ -795,14 +795,27 @@ class TestPreviewSavedTemplate:
     uploaded file for the picker's preview modal (previewSavedCustomTemplate
     in view.php), not a generated CIM."""
 
-    def test_renders_pdf_inline(self, client):
+    def test_renders_pdf_inline_with_lorem_text(self, client):
         import base64
-        fake_template = {"file_b64": base64.b64encode(b"%PDF-1.4 fake").decode(), "file_ext": "pdf"}
+        import pymupdf
+        from tests.pdf_helpers import make_text_pdf
+        pdf = make_text_pdf(heading="Kline Paper Overview", body="Serving Maryland customers.")
+        fake_template = {"file_b64": base64.b64encode(pdf).decode(), "file_ext": "pdf"}
         with patch("server.template_store.get_template", new=AsyncMock(return_value=fake_template)):
             response = client.get("/template/saved/1/preview")
         assert response.status_code == 200
         assert response.headers["content-type"] == "application/pdf"
-        assert response.content == b"%PDF-1.4 fake"
+        text = pymupdf.open(stream=response.content, filetype="pdf")[0].get_text().lower()
+        assert "kline" not in text and "maryland" not in text
+
+    def test_unreadable_pdf_shows_placeholder_never_the_original(self, client):
+        import base64
+        fake_template = {"file_b64": base64.b64encode(b"%PDF-1.4 truncated Kline Paper").decode(), "file_ext": "pdf"}
+        with patch("server.template_store.get_template", new=AsyncMock(return_value=fake_template)):
+            response = client.get("/template/saved/1/preview")
+        assert response.status_code == 200
+        assert b"No preview available" in response.content
+        assert b"Kline" not in response.content
 
     def test_renders_html_inline(self, client):
         import base64
@@ -812,17 +825,19 @@ class TestPreviewSavedTemplate:
             response = client.get("/template/saved/1/preview")
         assert response.status_code == 200
         assert "text/html" in response.headers["content-type"]
-        assert b"Hello" in response.content
+        assert b"<body>" in response.content and b"Hello" not in response.content   # lorem text
 
     def test_falls_back_to_extracted_text_for_docx(self, client):
         import base64
+        from core.office_convert import LegacyConversionError
         fake_template = {"file_b64": base64.b64encode(b"whatever").decode(), "file_ext": "docx"}
         with patch("server.template_store.get_template", new=AsyncMock(return_value=fake_template)), \
+             patch("server.convert_to_pdf", side_effect=LegacyConversionError("no soffice")), \
              patch("core.docx_style_extractor.extract_plain_text", return_value="Extracted docx body"):
             response = client.get("/template/saved/1/preview")
         assert response.status_code == 200
         assert "text/html" in response.headers["content-type"]
-        assert b"Extracted docx body" in response.content
+        assert b"Extracted" not in response.content      # shown as lorem ipsum
         assert b"Live preview isn" in response.content
 
     def test_returns_placeholder_when_no_file_attached(self, client):
